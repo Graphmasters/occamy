@@ -1,0 +1,9 @@
+# Locally vendored files
+vendor/
+
+# Goland IDE files
+.idea/
+.run/
+
+# Mac objects
+*.DS_Store
