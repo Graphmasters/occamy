@@ -1,0 +1,28 @@
+run:
+  modules-download-mode: readonly
+  skip-dirs:
+    - courier/experimental
+    - experimental
+    - vrp/experimental
+
+linters:
+  disable-all: true
+  enable:
+    - deadcode # Activated to avoid unused code
+    - errcheck # Activated to avoid unchecked errors
+    - exportloopref # Activated to avoid scope issues (replaces scopelint)
+    - gochecknoglobals # Activated to avoid global variables
+    - gocritic # Activated to make code cleaner
+    - gosimple # Activated to make code simpler
+    - govet # Activated to report suspicious constructs
+    - ineffassign # Activated to report unused assigned variables
+    - staticcheck # Activated for static analysis checks
+    - structcheck # Activated to find unused struct fields
+    - typecheck # Activated to type-check
+    - unused # Activated to check for unused constants, variables, functions and types
+    - varcheck # Activated to check for unused global variables anmd constants
+
+
+# https://github.com/golangci/golangci/wiki/Configuration
+service:
+  golangci-lint-version: 1.45.x # use the fixed version to not introduce new linters unexpectedly
