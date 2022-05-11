@@ -28,7 +28,26 @@ jobs:
       - name: Test
         run: go test -v -timeout 60s ./...
 
-  # The 'lint' job runs the linter
+  # The 'examples' package builds all the examples in the examples module
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Setup Go environment
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+
+      - name: Build examples
+        working-directory: ./examples
+        run: go build -v -o ./outputs/ ./...
+
+  # The 'lint' job runs the linter. It is only done on pull requests because
+  # the linter may change an fail on the push after it passed on a pull request.
   golangci:
     name: lint
     runs-on: ubuntu-latest
