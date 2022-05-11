@@ -377,7 +377,7 @@ func (server *Server) expandLocal() {
 		return
 	}
 
-	defer server.recordProcessDuration(time.Now(), ProcessExpansionActive)
+	defer server.recordProcessDuration(time.Now(), ProcessExpansion)
 
 	// Sorts indices to prioritise by slotStatus
 	indices := rand.Perm(server.config.Slots)

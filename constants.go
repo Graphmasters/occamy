@@ -5,8 +5,7 @@ package occamy
 const (
 	ProcessHandleRequestMessage = "handle_request_message"
 	ProcessHandleControlMessage = "handle_control_message"
-	ProcessExpansionActive      = "active_expansion_process"
-	ProcessExpansionIdle        = "idle_expansion_process"
+	ProcessExpansion            = "expansion_process"
 )
 
 // endregion
