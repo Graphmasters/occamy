@@ -192,14 +192,14 @@ func assertErrorIsNil(t *testing.T, err error, comment string) {
 	t.FailNow()
 }
 
-func assertErrorIsOccamyError(t *testing.T, expected occamy.SimpleError, actual error, comment string) {
+func assertErrorIsOccamyError(t *testing.T, expected occamy.BasicError, actual error, comment string) {
 	if actual == nil {
 		t.Logf("%s: error was nil", comment)
 		t.FailNow()
 	}
 
 	switch explicitErr := actual.(type) {
-	case occamy.SimpleError:
+	case occamy.BasicError:
 		assertErrorEqual(t, expected, explicitErr, fmt.Sprintf("%s: error was a simple error", comment))
 	case *occamy.DetailedError:
 		assertErrorEqual(t, expected, explicitErr, fmt.Sprintf("%s: error was a detailed error but the simple part didn't match", comment))
@@ -275,8 +275,8 @@ func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Ta
 	data := &MessageData{}
 	if err := json.Unmarshal(body, data); err != nil {
 		return nil, &occamy.WrappedError{
-			Simple: occamy.ErrInvalidBody,
-			Inner:  err,
+			BasicErr: occamy.ErrInvalidBody,
+			InnerErr: err,
 		}
 	}
 
@@ -287,8 +287,8 @@ func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Ta
 		return NewUnstoppableTask(data.ID, data.Expandable), nil
 	default:
 		return nil, &occamy.DetailedError{
-			Simple: occamy.ErrInvalidBody,
-			Cause:  fmt.Sprintf("unknown task group: %s", data.TaskGroup),
+			BasicErr: occamy.ErrInvalidBody,
+			Cause:    fmt.Sprintf("unknown task group: %s", data.TaskGroup),
 		}
 	}
 }
@@ -489,7 +489,7 @@ func (tc *TaskController) stopCh(id string) <-chan struct{} {
 
 // endregion
 
-// region Task - Simple
+// region Task - BasicErr
 
 const TaskGroupSimple = "simple"
 
