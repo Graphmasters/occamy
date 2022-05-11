@@ -223,6 +223,10 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 		// Performs task and once it is finished declares it empty. The message is then acked or nacked.
 		err := slot.doTask()
 		switch {
+		// TODO: The service shouldn't rely on users sending this error. It should
+		//    always be the case that if the service is shutting down (the only
+		//    reason a protected task would be interrupted) then the message
+		//    should be be requeued UNLESS the task completed without any error.
 		case err == ErrTaskInterrupted:
 			defer server.msgReject(msg, true)
 		case err != nil && properties.state == slotStatusProtected:
