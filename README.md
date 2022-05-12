@@ -10,6 +10,6 @@
 
   It is recommended that new users start by copying the relevant code from the examples as a way to quickly get started.
 
-#### Maintainers
+#### Maintainer
 
 - [Peter Finch](github.com/PeterEFinch)
