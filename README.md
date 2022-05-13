@@ -16,9 +16,10 @@ This library contains a server that assists in the utilises spare provisioned re
 2. uses spare resources to assist in processing current requests.
 
 The core idea is to have computational tasks which expand by creating assistant tasks to help the computation and can be
-stopped to provide resources for new incoming request with the server providing coordination. The name occamy comes from
-the fictional creature which can shrink and grow to fit the empty space around it which is conceptually similar to the
-treatment of tasks.
+stopped to provide resources for new incoming request with the server providing coordination.
+
+The name occamy comes from the fictional creature which can shrink and grow to fit the empty space around it which is
+conceptually similar to the treatment of tasks.
 
 #### Documentation
 
