@@ -2,7 +2,7 @@
 
 <p align="center">
 <em>
-Servers that utilise spare resources for computational intense distributed tasks.
+Servers that utilise spare resources for computational intense distributed tasks by scaling tasks within a server.
 </em>
 </p>
 
@@ -17,9 +17,6 @@ This library contains a server that assists in the utilises spare provisioned re
 
 The core idea is to have computational tasks which expand by creating assistant tasks to help the computation and can be
 stopped to provide resources for new incoming request with the server providing coordination.
-
-The name occamy comes from the fictional creature which can shrink and grow to fit the empty space around it which is
-conceptually similar to the treatment of tasks.
 
 #### Documentation
 
