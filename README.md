@@ -6,11 +6,11 @@ Servers that utilise spare resources for computational intense distributed tasks
 </em>
 </p>
 
-Horizontal scaling of services in cloud infrastructure is a convenient and effective way to provide the required
+Elastic horizontal scaling of services in cloud infrastructure is a convenient and effective way to provide the required
 resources for running a service. For computational intense request which have irregular and unpredictable schedules
 resources often end up being overprovisioned/underutilised to ensure that requests can be handled promptly.
 
-This library contains a server that assists in the utilises spare provisioned resources. The server
+This library contains a server that utilises spare provisioned resources. The server
 
 1. ensures resources can promptly handle any incoming request, and
 2. uses spare resources to assist in processing current requests.
