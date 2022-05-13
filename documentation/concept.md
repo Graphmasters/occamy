@@ -1,4 +1,10 @@
-# Occamy
+<p align="center">
+<font size="6">
+<b>
+Occamy
+</b></font>
+</p>
+
 
 <p align="center">
 <em>
@@ -21,7 +27,7 @@ Scaling of tasks within a service.
 </em>
 </p>
 
-Elastic horizontal scaling is like a library that adds or removes bookcases depending on the number of books. In contrast, Occamy's scaling is like adding duplicate books if there is space and removing duplicate books if new books arrive. The name Occamy comes from the fictional creature which can shrink and grow to fit the empty space around it.
+It is useful compare elastic horizontal scaling with the scaling of these servers. Elastic horizontal scaling typically scales computing instances up/out if there is high load and scales  them down/in if there is low load. In contrast Occamy scales task up if there is empty space and scales them down if there is a new task and not enough space. The name Occamy comes from the fictional creature which can shrink and grow to fit the empty space around it.
 
 
 
@@ -103,7 +109,7 @@ Each server is intended to work independently. The key points when considering t
 
 - In the expansion process the order that *unprotected* tasks are created and add is not prescribed. It may be useful to include some notion of priority.
 
-- All requests for computation should occur through the Occamy server. Tasks that require additional resources should send additional request messages for helper tasks and send a single request for a helper task as a control message.
+- All requests for computation should occur through the Occamy server. Tasks that require additional resources should send additional request messages for help and send a single request for a help as a control message.
 
 - Scaling for distributed systems using Occamy servers should not be based on CPU as servers attempt to maximum CPU load. Instead services should be scaled based on the number of protected tasks relative to the maximum allowed tasks.
 

@@ -20,8 +20,8 @@ stopped to provide resources for new incoming request with the server providing 
 
 #### Documentation
 
-- The [design document](./documentation/design.md) contains the abstract design for an Occamy server. It is written
-  independent of implementation and is a useful starting point to understanding the core concepts.
+- The [concept document](./documentation/concept.pdf) contains the concept for an Occamy server. It is written
+  independent of implementation and is a useful starting point to understanding the core design.
 
 - The [examples module](./examples) contains example implementations of interfaces appearing in this module as well as
   some example use cases. This provides a practical demonstration on how different aspects of occamy work.
