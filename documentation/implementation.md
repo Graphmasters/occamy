@@ -6,7 +6,7 @@
 
 - The server are initialised with the number of slots. It is recommended that each slots is associated with an equal amount of resources, i.e. CPU and memory. The general rule being that a slot is given the smallest CPU requirement for a single task, in the simplest case it is recommended to have one slot per CPU core. In the case that memory is a limiting factor, then choose a fewer number of slots and ensure that tasks can perform the computational intense process concurrently.
 
-- If the messaging protocol has a prefetch limit then this should match the number of slots for the channel with the request messages. MENTION blah.
+- If the messaging protocol has a prefetch limit then this should match the number of slots for the channel with the request messages. If prefetch limit is too low then it means that request messages that could be handled aren't. On the other hand, if the prefetch limit is too high then the service will regularly be rejecting messages because the server is full of *protected* tasks.``
 
 - The server relies on headers key-value pairs to process messages, however, the header keys themselves are configurable. 
 	- There must be a header key-value pair for task IDs. These are required for directing control messages to the relevant task. Control messages that do not have this header are treated as a request message and converted to a task and set aside for the expansion processes.
