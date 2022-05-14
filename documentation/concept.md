@@ -36,7 +36,7 @@ It is useful compare elastic horizontal scaling with the scaling of these server
 The original use case provides a useful example in understanding the design of the Occamy server. The situation was as follows:
 
 1. There was a distributed service (microservices) for handling optimisation requests in which all communication was asynchronous. The requests had to be handled promptly but had irregular and unpredictable schedules with frequent bursts.
-2. Optimisations required between 4 & 12 CPUs for between one & ten minutes to provide results. Additional CPUs could be used in parallel to provide better and/or faster results. These optimisation were performed using a master and assistants approach where there was a minimum number of assistants considered necessary.
+2. Optimisations required between 4 & 12 CPU cores for between one & ten minutes to provide results. Additional CPUs could be used in parallel to provide better and/or faster results. These optimisation were performed using a master and assistants approach where there was a minimum number of assistants considered necessary.
 3. There was balancing between providing enough resources so that requests could be handled promptly and minimising wastage. 
 
 Ultimately, the requirement to handle requests promptly was a considered a requirement which meant there was a minimum amount of resources provisioned. The aim became to use the spare resources while not blocking or delaying incoming requests. There are two simple scenarios that demonstrate the basic requirements.
