@@ -2,7 +2,7 @@
 
 <p align="center">
 <em>
-Servers that utilise spare resources for computational intense distributed tasks by scaling tasks within a server.
+Servers that utilise spare resources for computational intense distributed tasks.
 </em>
 </p>
 
