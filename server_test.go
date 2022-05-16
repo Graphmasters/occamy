@@ -32,11 +32,9 @@ func TestServer_HandleRequestMsg_Ack(t *testing.T) {
 	time.Sleep(ShortDuration)
 	assertErrorIsNil(t, monitors.Error.nextError(), "error after the task stopped")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
 	assertStringsEqual(t, MessageStatusAcked, msg.status, "")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_Requeue(t *testing.T) {
@@ -49,11 +47,9 @@ func TestServer_HandleRequestMsg_Requeue(t *testing.T) {
 	server.HandleRequestMsg(msg)
 	assertErrorIsNil(t, monitors.Error.nextError(), "error after adding first task")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after adding single task")
-
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
 	assertStringsEqual(t, MessageStatusRequeued, msg.status, "")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_Reject(t *testing.T) {
@@ -71,11 +67,9 @@ func TestServer_HandleRequestMsg_Reject(t *testing.T) {
 	time.Sleep(ShortDuration)
 	assertErrorEqual(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "no error after the task stopped")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
 	assertStringsEqual(t, MessageStatusRejected, msg.status, "")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_MultipleMessage(t *testing.T) {
@@ -104,9 +98,7 @@ func TestServer_HandleRequestMsg_MultipleMessage(t *testing.T) {
 	assertErrorIsOccamyError(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (2)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-2, 2, 0, 0, "resources after stopping tasks")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_OverloadServer(t *testing.T) {
@@ -120,9 +112,7 @@ func TestServer_HandleRequestMsg_OverloadServer(t *testing.T) {
 	assertErrorIsNotNil(t, monitors.Error.nextError(), "handling more requests than possible should trigger error")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, DefaultResources, 0, 0, "resources after overloading")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_OverloadServerTwice(t *testing.T) {
@@ -148,9 +138,7 @@ func TestServer_HandleRequestMsg_OverloadServerTwice(t *testing.T) {
 	assertErrorIsNotNil(t, monitors.Error.nextError(), "handling more requests than possible should trigger error (second attempt)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, DefaultResources, 0, 0, "resources after overloading (second attempt)")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 func TestServer_HandleRequestMsg_UnstoppableTask(t *testing.T) {
@@ -632,10 +620,20 @@ func NewServer(handlerID string, handler occamy.Handler) (*occamy.Server, Monito
 
 // region Server Shutdown
 
+// shutdownServer shuts down the server.
 func shutdownServer(server *occamy.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	server.Shutdown(ctx)
 	cancel()
+}
+
+// testServerShutdownSuccess shuts the server down is a success, that is, there
+// are no errors (the error monitor should contain no errors before shutdown)
+// and that there are only empty slots remaining.
+func testServerShutdownSuccess(t *testing.T, server *occamy.Server, monitors Monitors, resources int) {
+	shutdownServer(server)
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, resources, 0, 0, 0, "resources after server shutdown")
 }
 
 // endregion
