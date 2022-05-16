@@ -237,11 +237,11 @@ func assertStringsEqual(t *testing.T, expected, actual string, comment string) {
 	t.FailNow()
 }
 
-func assertResourceMonitorStatusMatch(t *testing.T, rm *ResourceMonitor, empty, protected, unprotected, external int, comment string) {
+func assertResourceMonitorStatusMatch(t *testing.T, rm *ResourceMonitor, empty, protected, unprotectedInternal, unprotectedExternal int, comment string) {
 	assertIntsEqual(t, empty, rm.statuses[occamy.SlotStatusEmpty], fmt.Sprintf("%s: mismatch in empty slots", comment))
 	assertIntsEqual(t, protected, rm.statuses[occamy.SlotStatusProtected], fmt.Sprintf("%s: mismatch in protected slots", comment))
-	assertIntsEqual(t, unprotected, rm.statuses[occamy.SlotStatusUnprotectedInternal], fmt.Sprintf("%s: mismatch in unprotected slots", comment))
-	assertIntsEqual(t, external, rm.statuses[occamy.SlotStatusUnprotectedExternal], fmt.Sprintf("%s: mismatch in external slots", comment))
+	assertIntsEqual(t, unprotectedInternal, rm.statuses[occamy.SlotStatusUnprotectedInternal], fmt.Sprintf("%s: mismatch in unprotected internal slots", comment))
+	assertIntsEqual(t, unprotectedExternal, rm.statuses[occamy.SlotStatusUnprotectedExternal], fmt.Sprintf("%s: mismatch in unprotected external slots", comment))
 
 }
 
