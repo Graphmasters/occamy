@@ -7,88 +7,203 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Graphmasters/occamy"
 )
 
+/*
+Many tests in this file overlap in what they are testing. This is because the
+server is stateful and testing one particular method usually requires other
+calls to ensure the server is in the desired state.
+
+The tests have been written so the tests should fail if the occamy package
+has been incorrectly implemented and panic if the test itself has been
+incorrectly implemented.
+*/
+
 const (
 	ShortDuration = 10 * time.Millisecond
 )
 
-func TestServer_HandleRequestMsg_Ack(t *testing.T) {
+// TestServer_HandleControlMsg tests that a control message can be handled.
+func TestServer_HandleControlMsg(t *testing.T) {
+	server, monitors := NewServer("", nil)
+	mf := NewMessageFactory()
+
+	msg := mf.NewCancelMessage("non-existent")
+	server.HandleControlMsg(msg)
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleControlMsg_cancelMultipleTasksWithSameID tests that if
+// multiple task with the same ID are running the cancel message will be handled
+// by all of them. This checks that the control message goes to multiple tasks
+// with matching task IDs.
+func TestServer_HandleControlMsg_cancelMultipleTasksWithSameID(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
-	server.HandleRequestMsg(msg)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after adding first task")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after adding single task")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+
+	cancel := mf.NewCancelMessage(msg.id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	panicIfBoolIsFalse(controller.isStopped(msg.id), "task was should have been cancelled via a message not using the controller")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleControlMsg_cancelTask tests that if a task is running it can
+// be cancelled via a control message.
+func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+
+	cancel := mf.NewCancelMessage(msg.id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	panicIfBoolIsFalse(controller.isStopped(msg.id), "task was should have been cancelled via a message not using the controller")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks tests that a that if
+// multiple tasks are running one of them can be cancelled. This checks that
+// the control message is only handled by the task with the task with the
+// matching task ID.
+func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msgs := mf.NewSimpleTaskMessages(4, false)
+	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "handling single message")
+
+	cancel := mf.NewCancelMessage(msgs[2].id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-3, 3, 0, 0, "resources after server shutdown")
+	assertMessageStatus(t, MessageStatusOpen, msgs[0], "message for running task")
+	assertMessageStatus(t, MessageStatusOpen, msgs[1], "message for running task")
+	assertMessageStatus(t, MessageStatusAcked, msgs[2], "message for cancelled task")
+	assertMessageStatus(t, MessageStatusOpen, msgs[3], "message for running task")
+	panicIfBoolIsFalse(controller.isStopped(msgs[2].id), "task was should have been cancelled via a message not using the controller")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleControlMsg_requestMessage tests if a request message can
+// be handled as a control message without leading to an error.
+func TestServer_HandleControlMsg_requestMessage(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	server.HandleControlMsg(msg)
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after request message handled as a control message")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg tests that a message can be handled.
+func TestServer_HandleRequestMsg(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_messageAck tests that a messages can be handled
+// and be an "acked"/"acknowledged".
+func TestServer_HandleRequestMsg_messageAck(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
 
 	controller.stop(msg.id, nil)
 	time.Sleep(ShortDuration)
 	assertErrorIsNil(t, monitors.Error.nextError(), "error after the task stopped")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	assertMessageStatus(t, MessageStatusAcked, msg, "message ack test")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-	assertStringsEqual(t, MessageStatusAcked, msg.status, "")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_Requeue(t *testing.T) {
+// TestServer_HandleRequestMsg_messageRequeue tests that a messages can be
+// handled and be "requeued".
+func TestServer_HandleRequestMsg_messageRequeue(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
-	server.HandleRequestMsg(msg)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after adding first task")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after adding single task")
-
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-	assertStringsEqual(t, MessageStatusRequeued, msg.status, "")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	assertMessageStatus(t, MessageStatusRequeued, msg, "message requeue test") // The message gets requeued after shutdown.
 }
 
-func TestServer_HandleRequestMsg_Reject(t *testing.T) {
+// TestServer_HandleRequestMsg_messageReject tests that a messages can be
+// handled and be "rejected".
+func TestServer_HandleRequestMsg_messageReject(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
-	server.HandleRequestMsg(msg)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after adding first task")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after adding single task")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
 
 	controller.stop(msg.id, occamy.ErrInvalidTask)
 	time.Sleep(ShortDuration)
 	assertErrorEqual(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "no error after the task stopped")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	assertMessageStatus(t, MessageStatusRejected, msg, "message reject test")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-	assertStringsEqual(t, MessageStatusRejected, msg.status, "")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_MultipleMessage(t *testing.T) {
+// TestServer_HandleRequestMsg_multipleMessage tests that the server can
+// successfully handle multiple messages.
+func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(6, true)
-	handleRequestMessages(server, msgs)
-
-	assertErrorIsNil(t, monitors.Error.nextError(), "errors after multiple messages")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-6, 6, 0, 0, "resources after multiple message")
+	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "handling multiple messages")
 
 	controller.stop(msgs[0].id, nil)
 	controller.stop(msgs[1].id, nil)
@@ -104,32 +219,33 @@ func TestServer_HandleRequestMsg_MultipleMessage(t *testing.T) {
 	assertErrorIsOccamyError(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (2)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-2, 2, 0, 0, "resources after stopping tasks")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_OverloadServer(t *testing.T) {
+// TestServer_HandleRequestMsg_overloadServer tests that the server will
+// requeue messages if it is overloaded.
+func TestServer_HandleRequestMsg_overloadServer(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
 	handleRequestMessages(server, msgs)
 	assertErrorIsNotNil(t, monitors.Error.nextError(), "handling more requests than possible should trigger error")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, DefaultResources, 0, 0, "resources after overloading")
+	assertMessageStatus(t, MessageStatusRequeued, msgs[DefaultResources], "overloaded server")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_OverloadServerTwice(t *testing.T) {
+// TestServer_HandleRequestMsg_overloadServer tests that the server will
+// requeue messages if it is overloaded. The overloading is done twice.
+func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
 	handleRequestMessages(server, msgs)
@@ -148,26 +264,66 @@ func TestServer_HandleRequestMsg_OverloadServerTwice(t *testing.T) {
 	assertErrorIsNotNil(t, monitors.Error.nextError(), "handling more requests than possible should trigger error (second attempt)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, DefaultResources, 0, 0, "resources after overloading (second attempt)")
 
-	shutdownServer(server)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_UnstoppableTask(t *testing.T) {
+// TestServer_Shutdown tests that the shutdown can be successfully called and
+// yield no errors.
+func TestServer_Shutdown(t *testing.T) {
+	server, monitors := NewServer(StandardHandlerID, nil)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_idempotent tests that shutdown can be successfully called
+// multiple times.
+func TestServer_Shutdown_idempotent(t *testing.T) {
+	server, monitors := NewServer(StandardHandlerID, nil)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_idempotent_withTasks tests that shutdown can be
+// successfully called multiple times when the server contains tasks.
+func TestServer_Shutdown_idempotent_withTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
+
+	messages := mf.NewSimpleTaskMessages(4, false)
+	testHandleRequestMessagesSuccess(t, server, monitors, messages, "handling multiple tasks")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_withTasks tests that shutdown empties all slots without
+// any errors when the server contains tasks.
+func TestServer_Shutdown_withTasks(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	messages := mf.NewSimpleTaskMessages(4, false)
+	testHandleRequestMessagesSuccess(t, server, monitors, messages, "handling multiple tasks")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_withUnstoppableTask tests that shutdown will record
+// errors when the server contains unstoppable tasks.
+func TestServer_Shutdown_withUnstoppableTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
 
 	msg := mf.NewUnstoppableTaskMessage(false)
-	server.HandleRequestMsg(msg)
-	assertErrorIsNil(t, monitors.Error.nextError(), "error after adding first task")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after adding single task")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling multiple tasks")
 
 	shutdownServer(server)
 	assertErrorIsOccamyError(t, occamy.ErrTaskNotKilled, monitors.Error.nextError(), "no error after shutdown")
-	// assertErrorIsOccamyError(t, occamy.ErrTaskNotAdded, monitors.Error.nextError(), "error after adding first task")
-	// assertErrorIsNotNil(t, monitors.Error.nextError(), "error after shutdown")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after server shutdown")
 }
 
@@ -240,21 +396,36 @@ func assertIntsEqual(t *testing.T, expected, actual int, comment string) {
 	t.FailNow()
 }
 
-func assertStringsEqual(t *testing.T, expected, actual string, comment string) {
-	if expected == actual {
+func assertMessageStatus(t *testing.T, expected string, message *Message, comment string) {
+	if message.status == expected {
 		return
 	}
 
-	t.Logf("%s: actual value (%s) does not match expected value %s", comment, actual, expected)
+	t.Logf("%s: message has status %s does not match expected status %s", comment, message.status, expected)
 	t.FailNow()
 }
 
-func assertResourceMonitorStatusMatch(t *testing.T, rm *ResourceMonitor, empty, protected, unprotected, external int, comment string) {
+func assertResourceMonitorStatusMatch(t *testing.T, rm *ResourceMonitor, empty, protected, unprotectedInternal, unprotectedExternal int, comment string) {
 	assertIntsEqual(t, empty, rm.statuses[occamy.SlotStatusEmpty], fmt.Sprintf("%s: mismatch in empty slots", comment))
 	assertIntsEqual(t, protected, rm.statuses[occamy.SlotStatusProtected], fmt.Sprintf("%s: mismatch in protected slots", comment))
-	assertIntsEqual(t, unprotected, rm.statuses[occamy.SlotStatusUnprotectedInternal], fmt.Sprintf("%s: mismatch in unprotected slots", comment))
-	assertIntsEqual(t, external, rm.statuses[occamy.SlotStatusUnprotectedExternal], fmt.Sprintf("%s: mismatch in external slots", comment))
+	assertIntsEqual(t, unprotectedInternal, rm.statuses[occamy.SlotStatusUnprotectedInternal], fmt.Sprintf("%s: mismatch in unprotected internal slots", comment))
+	assertIntsEqual(t, unprotectedExternal, rm.statuses[occamy.SlotStatusUnprotectedExternal], fmt.Sprintf("%s: mismatch in unprotected external slots", comment))
 
+}
+
+// endregion
+
+// region Comment Helpers
+
+func joinComments(primary, secondary string) string {
+	switch {
+	case primary == "":
+		return secondary
+	case secondary == "":
+		return primary
+	default:
+		return fmt.Sprintf("%s: %s", primary, secondary)
+	}
 }
 
 // endregion
@@ -272,7 +443,7 @@ func NewStandardHandler(controller *TaskController) *StandardHandler {
 }
 
 func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Task, error) {
-	data := &MessageData{}
+	data := &MessageDataRequest{}
 	if err := json.Unmarshal(body, data); err != nil {
 		return nil, &occamy.WrappedError{
 			BasicErr: occamy.ErrInvalidBody,
@@ -347,9 +518,9 @@ func (m *Message) setStatus(status string) {
 
 // endregion
 
-// region Message Data
+// region Message Data - Request
 
-type MessageData struct {
+type MessageDataRequest struct {
 	ID         string
 	Expandable bool
 	TaskGroup  string
@@ -357,25 +528,47 @@ type MessageData struct {
 
 // endregion
 
+// region Message Data - Control
+
+type MessageDataControl struct {
+	ID     string
+	Cancel bool
+}
+
+// endregion
+
 // region Message Factory
 
 type MessageFactory struct {
-	count   int
-	handler string
-	mutex   *sync.Mutex
+	count                int32
+	handler              string
+	includeHandlerHeader bool
 }
 
-func NewMessageFactory(handlerID string) *MessageFactory {
+func NewMessageFactory() *MessageFactory {
 	return &MessageFactory{
-		count:   0,
-		handler: handlerID,
-		mutex:   &sync.Mutex{},
+		count: 0,
 	}
 }
 
+func NewMessageFactoryWithHandlerID(handlerID string) *MessageFactory {
+	return &MessageFactory{
+		count:                0,
+		handler:              handlerID,
+		includeHandlerHeader: true,
+	}
+}
+
+func (mf *MessageFactory) NewCancelMessage(id string) *Message {
+	return mf.convertControlToMessage(MessageDataControl{
+		ID:     id,
+		Cancel: true,
+	})
+}
+
 func (mf *MessageFactory) NewSimpleTaskMessage(expandable bool) *Message {
-	return mf.convertToMessage(MessageData{
-		ID:         mf.nextID(),
+	return mf.convertRequestToMessage(MessageDataRequest{
+		ID:         fmt.Sprintf("simple_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupSimple,
 	})
@@ -391,16 +584,16 @@ func (mf *MessageFactory) NewSimpleTaskMessages(n int, expandable bool) []*Messa
 }
 
 func (mf *MessageFactory) NewUnstoppableTaskMessage(expandable bool) *Message {
-	return mf.convertToMessage(MessageData{
-		ID:         mf.nextID(),
+	return mf.convertRequestToMessage(MessageDataRequest{
+		ID:         fmt.Sprintf("unstoppable_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupUnstoppable,
 	})
 }
 
-func (mf *MessageFactory) convertToMessage(data MessageData) *Message {
+func (mf *MessageFactory) convertControlToMessage(data MessageDataControl) *Message {
 	headers := make(occamy.Headers)
-	headers[HeaderKeyHandlerID] = mf.handler
+	headers[HeaderKeyTaskID] = data.ID
 
 	body, err := json.Marshal(data)
 	if err != nil {
@@ -409,18 +602,36 @@ func (mf *MessageFactory) convertToMessage(data MessageData) *Message {
 
 	return &Message{
 		id:      data.ID,
-		headers: nil,
+		headers: headers,
 		body:    body,
 		status:  MessageStatusOpen,
 		mutex:   &sync.Mutex{},
 	}
 }
 
-func (mf *MessageFactory) nextID() string {
-	mf.mutex.Lock()
-	id := fmt.Sprintf("%03d", mf.count)
-	mf.count++
-	mf.mutex.Unlock()
+func (mf *MessageFactory) convertRequestToMessage(data MessageDataRequest) *Message {
+	headers := make(occamy.Headers)
+	if mf.includeHandlerHeader {
+		headers[HeaderKeyHandlerID] = mf.handler
+	}
+
+	body, err := json.Marshal(data)
+	if err != nil {
+		panic(fmt.Sprintf("unable to continue test as message data could not be marshaled into the body of a message: %v", err))
+	}
+
+	return &Message{
+		id:      data.ID,
+		headers: headers,
+		body:    body,
+		status:  MessageStatusOpen,
+		mutex:   &sync.Mutex{},
+	}
+}
+
+func (mf *MessageFactory) nextIDSuffix() string {
+	value := atomic.AddInt32(&mf.count, 1)
+	id := fmt.Sprintf("%03d", value)
 	return id
 }
 
@@ -434,6 +645,34 @@ const (
 	MessageStatusRejected = "rejected"
 	MessageStatusRequeued = "requeued"
 )
+
+// endregion
+
+// region Panic
+
+// panicIfBoolIsFalse will panic if the value is false.
+//
+// This method should only be used when checking an internal mechanism of the
+// test is as expected. The panic indicates that it is the test itself that has
+// not been correctly implemented.
+func panicIfBoolIsFalse(value bool, comment string) {
+	if !value {
+		return
+	}
+
+	panic(fmt.Sprintf("%s: boolean was true when expected to be false", comment))
+}
+
+// panicIfErrorMonitorContainsErrors will panic if error monitor contains errors.
+//
+// This method should only be used when checking an internal mechanism of the
+// test is as expected. The panic indicates that it is the test itself that has
+// not been correctly implemented.
+func panicIfErrorMonitorContainsErrors(monitors Monitors, comment string) {
+	if len(monitors.Error.errors) > 0 {
+		panic(fmt.Sprintf("%s: error monitor contained errors", comment))
+	}
+}
 
 // endregion
 
@@ -455,6 +694,20 @@ func NewTaskController() *TaskController {
 	}
 }
 
+func (tc *TaskController) error(id string) error {
+	tc.mutex.Lock()
+	err := tc.errors[id]
+	tc.mutex.Unlock()
+	return err
+}
+
+func (tc *TaskController) isStopped(id string) bool {
+	tc.mutex.Lock()
+	_, stopped := tc.errors[id]
+	tc.mutex.Unlock()
+	return stopped
+}
+
 func (tc *TaskController) register(id string) {
 	tc.mutex.Lock()
 	if _, ok := tc.stopChs[id]; !ok {
@@ -465,19 +718,15 @@ func (tc *TaskController) register(id string) {
 }
 
 func (tc *TaskController) stop(id string, err error) {
+	// The task is always registered before stopping to ensure that the channel
+	// can always be closed.
+	tc.register(id)
 	tc.mutex.Lock()
 	tc.stopOnces[id].Do(func() {
 		tc.errors[id] = err
 		close(tc.stopChs[id])
 	})
 	tc.mutex.Unlock()
-}
-
-func (tc *TaskController) error(id string) error {
-	tc.mutex.Lock()
-	err := tc.errors[id]
-	tc.mutex.Unlock()
-	return err
 }
 
 func (tc *TaskController) stopCh(id string) <-chan struct{} {
@@ -489,7 +738,7 @@ func (tc *TaskController) stopCh(id string) <-chan struct{} {
 
 // endregion
 
-// region Task - BasicErr
+// region Task - Simple
 
 const TaskGroupSimple = "simple"
 
@@ -539,14 +788,37 @@ func (task *SimpleTask) Expand(n int) []occamy.Task {
 
 	tasks := make([]occamy.Task, n)
 	for i := range tasks {
-		tasks[i] = NewSimpleTask(task.id, task.expandable, task.controller)
+		tasks[i] = NewSimpleTask(task.assistantID(), task.expandable, task.controller)
 	}
 
 	return tasks
 }
 
-func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, _ []byte) error {
+func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, body []byte) error {
+	message := &MessageDataControl{}
+	if err := json.Unmarshal(body, message); err != nil {
+		return err
+	}
+
+	if message.ID != task.id {
+		return fmt.Errorf("control message sent to wrong task")
+	}
+
+	if message.Cancel {
+		task.stop()
+	}
+
 	return nil
+}
+
+func (task *SimpleTask) assistantID() string {
+	return fmt.Sprintf("%s_assistant", task.id)
+}
+
+func (task *SimpleTask) stop() {
+	task.stopOnce.Do(func() {
+		close(task.stopCh)
+	})
 }
 
 // endregion
@@ -632,19 +904,67 @@ func NewServer(handlerID string, handler occamy.Handler) (*occamy.Server, Monito
 
 // region Server Shutdown
 
+// shutdownServer shuts down the server.
 func shutdownServer(server *occamy.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	server.Shutdown(ctx)
 	cancel()
 }
 
+// testServerShutdownSuccess shuts the server down is a success, that is, there
+// are no errors (the error monitor should contain no errors before shutdown)
+// and that there are only empty slots remaining.
+func testServerShutdownSuccess(t *testing.T, server *occamy.Server, monitors Monitors, resources int) {
+	panicIfErrorMonitorContainsErrors(monitors, "error monitor must contain no errors before testing that a server can be properly shutdown")
+
+	shutdownServer(server)
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, resources, 0, 0, 0, "resources after server shutdown")
+}
+
 // endregion
 
-// region Sever Helper Functions
+// region Server Handler Request Message
 
 func handleRequestMessages(server *occamy.Server, messages []*Message) {
 	for i := range messages {
 		server.HandleRequestMsg(messages[i])
+	}
+}
+
+// testHandleRequestMessageSuccess tests that the server can handle a message
+// without an error and adjusting the resources appropriately.
+func testHandleRequestMessageSuccess(t *testing.T, server *occamy.Server, monitors Monitors, message *Message, comment string) {
+	panicIfErrorMonitorContainsErrors(monitors, "error monitor must contain no errors before testing that a message can be handled correctly")
+
+	empty := monitors.Resource.statuses[occamy.SlotStatusEmpty]
+	protected := monitors.Resource.statuses[occamy.SlotStatusProtected]
+	unprotectedInternal := monitors.Resource.statuses[occamy.SlotStatusUnprotectedInternal]
+	unprotectedExternal := monitors.Resource.statuses[occamy.SlotStatusUnprotectedExternal]
+
+	// Adjusts the resources to the expected amount
+	protected++
+	switch {
+	case empty > 0:
+		empty--
+	case unprotectedExternal > 0:
+		unprotectedExternal--
+	case unprotectedInternal > 0:
+		unprotectedInternal--
+	default:
+		panic("test invalid: insufficient resources for the message to be successfully handled")
+	}
+
+	server.HandleRequestMsg(message)
+	assertErrorIsNil(t, monitors.Error.nextError(), joinComments(comment, "unexpected error after adding task"))
+	assertResourceMonitorStatusMatch(t, monitors.Resource, empty, protected, unprotectedInternal, unprotectedExternal, joinComments(comment, "resources after adding task"))
+}
+
+// testHandleRequestMessageSuccess tests that the server can handle messages
+// without an error and adjusting the resources appropriately.
+func testHandleRequestMessagesSuccess(t *testing.T, server *occamy.Server, monitors Monitors, messages []*Message, comment string) {
+	for i := range messages {
+		testHandleRequestMessageSuccess(t, server, monitors, messages[i], joinComments(comment, fmt.Sprintf("message %d", i)))
 	}
 }
 
