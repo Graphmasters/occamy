@@ -18,6 +18,10 @@ import (
 Many tests in this file overlap in what they are testing. This is because the
 server is stateful and testing one particular method usually requires other
 calls to ensure the server is in the desired state.
+
+The tests have been written so the tests should fail if the occamy package
+has been incorrectly implemented and panic if the test itself has been
+incorrectly implemented.
 */
 
 const (
@@ -35,6 +39,33 @@ func TestServer_HandleControlMsg(t *testing.T) {
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
+// TestServer_HandleControlMsg_cancelMultipleTasksWithSameID tests that if
+// multiple task with the same ID are running the cancel message will be handled
+// by all of them. This checks that the control message goes to multiple tasks
+// with matching task IDs.
+func TestServer_HandleControlMsg_cancelMultipleTasksWithSameID(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+
+	cancel := mf.NewCancelMessage(msg.id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	panicIfBoolIsFalse(controller.isStopped(msg.id), "task was should have been cancelled via a message not using the controller")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleControlMsg_cancelTask tests that if a task is running it can
+// be cancelled via a control message.
 func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
@@ -50,10 +81,15 @@ func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
 
 	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+	panicIfBoolIsFalse(controller.isStopped(msg.id), "task was should have been cancelled via a message not using the controller")
 
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
+// TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks tests that a that if
+// multiple tasks are running one of them can be cancelled. This checks that
+// the control message is only handled by the task with the task with the
+// matching task ID.
 func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
@@ -69,31 +105,26 @@ func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
 
 	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-3, 3, 0, 0, "resources after server shutdown")
-	assertMessageStatus(t, MessageStatusOpen, msgs[0], "")
-	assertMessageStatus(t, MessageStatusOpen, msgs[1], "")
-	assertMessageStatus(t, MessageStatusAcked, msgs[2], "")
-	assertMessageStatus(t, MessageStatusOpen, msgs[3], "")
+	assertMessageStatus(t, MessageStatusOpen, msgs[0], "message for running task")
+	assertMessageStatus(t, MessageStatusOpen, msgs[1], "message for running task")
+	assertMessageStatus(t, MessageStatusAcked, msgs[2], "message for cancelled task")
+	assertMessageStatus(t, MessageStatusOpen, msgs[3], "message for running task")
+	panicIfBoolIsFalse(controller.isStopped(msgs[2].id), "task was should have been cancelled via a message not using the controller")
 
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleControlMsg_cancelMultipleTasksWithSame(t *testing.T) {
+// TestServer_HandleControlMsg_requestMessage tests if a request message can
+// be handled as a control message without leading to an error.
+func TestServer_HandleControlMsg_requestMessage(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
-	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
-	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
-
-	cancel := mf.NewCancelMessage(msg.id)
-	server.HandleControlMsg(cancel)
-	time.Sleep(ShortDuration)
-
-	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
-	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
-
+	server.HandleControlMsg(msg)
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after request message handled as a control message")
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
@@ -617,6 +648,34 @@ const (
 
 // endregion
 
+// region Panic
+
+// panicIfBoolIsFalse will panic if the value is false.
+//
+// This method should only be used when checking an internal mechanism of the
+// test is as expected. The panic indicates that it is the test itself that has
+// not been correctly implemented.
+func panicIfBoolIsFalse(value bool, comment string) {
+	if !value {
+		return
+	}
+
+	panic(fmt.Sprintf("%s: boolean was true when expected to be false", comment))
+}
+
+// panicIfErrorMonitorContainsErrors will panic if error monitor contains errors.
+//
+// This method should only be used when checking an internal mechanism of the
+// test is as expected. The panic indicates that it is the test itself that has
+// not been correctly implemented.
+func panicIfErrorMonitorContainsErrors(monitors Monitors, comment string) {
+	if len(monitors.Error.errors) > 0 {
+		panic(fmt.Sprintf("%s: error monitor contained errors", comment))
+	}
+}
+
+// endregion
+
 // region Task Controller
 
 type TaskController struct {
@@ -633,6 +692,20 @@ func NewTaskController() *TaskController {
 		stopOnces: map[string]*sync.Once{},
 		mutex:     &sync.Mutex{},
 	}
+}
+
+func (tc *TaskController) error(id string) error {
+	tc.mutex.Lock()
+	err := tc.errors[id]
+	tc.mutex.Unlock()
+	return err
+}
+
+func (tc *TaskController) isStopped(id string) bool {
+	tc.mutex.Lock()
+	_, stopped := tc.errors[id]
+	tc.mutex.Unlock()
+	return stopped
 }
 
 func (tc *TaskController) register(id string) {
@@ -654,13 +727,6 @@ func (tc *TaskController) stop(id string, err error) {
 		close(tc.stopChs[id])
 	})
 	tc.mutex.Unlock()
-}
-
-func (tc *TaskController) error(id string) error {
-	tc.mutex.Lock()
-	err := tc.errors[id]
-	tc.mutex.Unlock()
-	return err
 }
 
 func (tc *TaskController) stopCh(id string) <-chan struct{} {
@@ -850,9 +916,7 @@ func shutdownServer(server *occamy.Server) {
 // are no errors (the error monitor should contain no errors before shutdown)
 // and that there are only empty slots remaining.
 func testServerShutdownSuccess(t *testing.T, server *occamy.Server, monitors Monitors, resources int) {
-	if len(monitors.Error.errors) > 0 {
-		panic("error monitor must contain no errors before testing that a server can be properly shutdown")
-	}
+	panicIfErrorMonitorContainsErrors(monitors, "error monitor must contain no errors before testing that a server can be properly shutdown")
 
 	shutdownServer(server)
 	assertErrorIsNil(t, monitors.Error.nextError(), "error after shutdown")
@@ -872,9 +936,7 @@ func handleRequestMessages(server *occamy.Server, messages []*Message) {
 // testHandleRequestMessageSuccess tests that the server can handle a message
 // without an error and adjusting the resources appropriately.
 func testHandleRequestMessageSuccess(t *testing.T, server *occamy.Server, monitors Monitors, message *Message, comment string) {
-	if len(monitors.Error.errors) > 0 {
-		panic("error monitor must contain no errors before testing that a message can be handled correctly")
-	}
+	panicIfErrorMonitorContainsErrors(monitors, "error monitor must contain no errors before testing that a message can be handled correctly")
 
 	empty := monitors.Resource.statuses[occamy.SlotStatusEmpty]
 	protected := monitors.Resource.statuses[occamy.SlotStatusProtected]
