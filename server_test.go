@@ -13,6 +13,12 @@ import (
 	"github.com/Graphmasters/occamy"
 )
 
+/*
+Many tests in this file overlap in what they are testing. This is because the
+server is stateful and testing one particular method usually requires other
+calls to ensure the server is in the desired state.
+*/
+
 const (
 	ShortDuration = 10 * time.Millisecond
 )
@@ -141,7 +147,55 @@ func TestServer_HandleRequestMsg_OverloadServerTwice(t *testing.T) {
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
-func TestServer_HandleRequestMsg_UnstoppableTask(t *testing.T) {
+// TestServer_Shutdown tests that the shutdown can be successfully called and
+// yield no errors.
+func TestServer_Shutdown(t *testing.T) {
+	server, monitors := NewServer(StandardHandlerID, nil)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_idempotent tests that shutdown can be successfully called
+// multiple times.
+func TestServer_Shutdown_idempotent(t *testing.T) {
+	server, monitors := NewServer(StandardHandlerID, nil)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_idempotent_withTasks tests that shutdown can be
+// successfully called multiple times when the server contains tasks.
+func TestServer_Shutdown_idempotent_withTasks(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory(StandardHandlerID)
+
+	messages := mf.NewSimpleTaskMessages(4, false)
+	handleRequestMessages(server, messages)
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-4, 4, 0, 0, "resources after adding tasks")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_withTasks tests that shutdown empties all slots without
+// any errors when the server contains tasks.
+func TestServer_Shutdown_withTasks(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory(StandardHandlerID)
+
+	messages := mf.NewSimpleTaskMessages(4, false)
+	handleRequestMessages(server, messages)
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-4, 4, 0, 0, "resources after adding tasks")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Shutdown_withUnstoppableTask tests that shutdown will record
+// errors when the server contains unstoppable tasks.
+func TestServer_Shutdown_withUnstoppableTask(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
@@ -154,8 +208,6 @@ func TestServer_HandleRequestMsg_UnstoppableTask(t *testing.T) {
 
 	shutdownServer(server)
 	assertErrorIsOccamyError(t, occamy.ErrTaskNotKilled, monitors.Error.nextError(), "no error after shutdown")
-	// assertErrorIsOccamyError(t, occamy.ErrTaskNotAdded, monitors.Error.nextError(), "error after adding first task")
-	// assertErrorIsNotNil(t, monitors.Error.nextError(), "error after shutdown")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after server shutdown")
 }
 
@@ -638,7 +690,7 @@ func testServerShutdownSuccess(t *testing.T, server *occamy.Server, monitors Mon
 
 // endregion
 
-// region Sever Helper Functions
+// region Server Handler Request Message
 
 func handleRequestMessages(server *occamy.Server, messages []*Message) {
 	for i := range messages {
