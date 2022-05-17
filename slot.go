@@ -8,8 +8,7 @@ import (
 
 // properties represent the properties of the slot and task
 type properties struct {
-	handler string     // The handler that created the task (this was added as the original plan was to allow multiple handlers per server)
-	state   slotStatus // The state of the slot i.e. empty, protected or unprotected.
+	state slotStatus // The state of the slot i.e. empty, protected or unprotected.
 }
 
 // externalTask represents a request message that was handled via the control

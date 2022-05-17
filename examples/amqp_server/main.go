@@ -42,7 +42,6 @@ func main() {
 		Slots:           *slots,
 		KillTimeout:     time.Millisecond,
 		HeaderKeyTaskID: HeaderKeyTaskID,
-		HandlerID:       "handler",
 		Handler:         handle,
 		Monitors:        occamy.Monitors{},
 	})

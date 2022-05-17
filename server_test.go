@@ -887,8 +887,6 @@ func NewServer(handlerID string, handler occamy.Handler) (*occamy.Server, Monito
 		ExpansionPeriod:     0,
 		KillTimeout:         100 * time.Millisecond,
 		HeaderKeyTaskID:     HeaderKeyTaskID,
-		HeaderKeyHandlerID:  HeaderKeyHandlerID,
-		HandlerID:           handlerID,
 		Handler:             handler,
 		Monitors: occamy.Monitors{
 			Error:    monitors.Error,
@@ -1017,7 +1015,6 @@ func (em *ErrorMonitor) nextError() error {
 // region Monitor - Resource
 
 type ResourceMonitor struct {
-	handlers map[string]int
 	groups   map[string]int
 	statuses map[occamy.SlotStatus]int
 
@@ -1026,7 +1023,6 @@ type ResourceMonitor struct {
 
 func NewResourceMonitor(resources int) *ResourceMonitor {
 	rm := &ResourceMonitor{
-		handlers: make(map[string]int),
 		groups:   make(map[string]int),
 		statuses: make(map[occamy.SlotStatus]int),
 		mutex:    &sync.Mutex{},
@@ -1036,18 +1032,16 @@ func NewResourceMonitor(resources int) *ResourceMonitor {
 	return rm
 }
 
-func (rm *ResourceMonitor) RecordTaskStarting(handler string, group string, status occamy.SlotStatus) {
+func (rm *ResourceMonitor) RecordTaskStarting(group string, status occamy.SlotStatus) {
 	rm.mutex.Lock()
-	rm.handlers[handler]++
 	rm.groups[group]++
 	rm.statuses[status]++
 	rm.statuses[occamy.SlotStatusEmpty]--
 	rm.mutex.Unlock()
 }
 
-func (rm *ResourceMonitor) RecordTaskStopping(handler string, group string, status occamy.SlotStatus) {
+func (rm *ResourceMonitor) RecordTaskStopping(group string, status occamy.SlotStatus) {
 	rm.mutex.Lock()
-	rm.handlers[handler]--
 	rm.groups[group]--
 	rm.statuses[status]--
 	rm.statuses[occamy.SlotStatusEmpty]++
