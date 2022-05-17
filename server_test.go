@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -426,22 +427,20 @@ type MessageData struct {
 // region Message Factory
 
 type MessageFactory struct {
-	count   int
+	count   int32
 	handler string
-	mutex   *sync.Mutex
 }
 
 func NewMessageFactory(handlerID string) *MessageFactory {
 	return &MessageFactory{
 		count:   0,
 		handler: handlerID,
-		mutex:   &sync.Mutex{},
 	}
 }
 
 func (mf *MessageFactory) NewSimpleTaskMessage(expandable bool) *Message {
 	return mf.convertToMessage(MessageData{
-		ID:         mf.nextID(),
+		ID:         fmt.Sprintf("simple_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupSimple,
 	})
@@ -458,7 +457,7 @@ func (mf *MessageFactory) NewSimpleTaskMessages(n int, expandable bool) []*Messa
 
 func (mf *MessageFactory) NewUnstoppableTaskMessage(expandable bool) *Message {
 	return mf.convertToMessage(MessageData{
-		ID:         mf.nextID(),
+		ID:         fmt.Sprintf("unstoppable_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupUnstoppable,
 	})
@@ -482,11 +481,9 @@ func (mf *MessageFactory) convertToMessage(data MessageData) *Message {
 	}
 }
 
-func (mf *MessageFactory) nextID() string {
-	mf.mutex.Lock()
-	id := fmt.Sprintf("%03d", mf.count)
-	mf.count++
-	mf.mutex.Unlock()
+func (mf *MessageFactory) nextIDSuffix() string {
+	value := atomic.AddInt32(&mf.count, 1)
+	id := fmt.Sprintf("%03d", value)
 	return id
 }
 
@@ -531,6 +528,9 @@ func (tc *TaskController) register(id string) {
 }
 
 func (tc *TaskController) stop(id string, err error) {
+	// The task is always registered before stopping to ensure that the channel
+	// can always be closed.
+	tc.register(id)
 	tc.mutex.Lock()
 	tc.stopOnces[id].Do(func() {
 		tc.errors[id] = err
@@ -555,7 +555,7 @@ func (tc *TaskController) stopCh(id string) <-chan struct{} {
 
 // endregion
 
-// region Task - BasicErr
+// region Task - Simple
 
 const TaskGroupSimple = "simple"
 
@@ -605,7 +605,7 @@ func (task *SimpleTask) Expand(n int) []occamy.Task {
 
 	tasks := make([]occamy.Task, n)
 	for i := range tasks {
-		tasks[i] = NewSimpleTask(task.id, task.expandable, task.controller)
+		tasks[i] = NewSimpleTask(task.assistantID(), task.expandable, task.controller)
 	}
 
 	return tasks
@@ -613,6 +613,10 @@ func (task *SimpleTask) Expand(n int) []occamy.Task {
 
 func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, _ []byte) error {
 	return nil
+}
+
+func (task *SimpleTask) assistantID() string {
+	return fmt.Sprintf("%s_assistant", task.id)
 }
 
 // endregion
