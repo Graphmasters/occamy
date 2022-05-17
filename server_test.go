@@ -804,8 +804,7 @@ func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, body []byte)
 		return fmt.Errorf("control message sent to wrong task")
 	}
 
-	switch {
-	case message.Cancel:
+	if message.Cancel {
 		task.stop()
 	}
 
