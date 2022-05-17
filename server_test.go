@@ -24,12 +24,85 @@ const (
 	ShortDuration = 10 * time.Millisecond
 )
 
+// TestServer_HandleControlMsg tests that a control message can be handled.
+func TestServer_HandleControlMsg(t *testing.T) {
+	server, monitors := NewServer("", nil)
+	mf := NewMessageFactory()
+
+	msg := mf.NewCancelMessage("non-existent")
+	server.HandleControlMsg(msg)
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+
+	cancel := mf.NewCancelMessage(msg.id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msgs := mf.NewSimpleTaskMessages(4, false)
+	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "handling single message")
+
+	cancel := mf.NewCancelMessage(msgs[2].id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-3, 3, 0, 0, "resources after server shutdown")
+	assertMessageStatus(t, MessageStatusOpen, msgs[0], "")
+	assertMessageStatus(t, MessageStatusOpen, msgs[1], "")
+	assertMessageStatus(t, MessageStatusAcked, msgs[2], "")
+	assertMessageStatus(t, MessageStatusOpen, msgs[3], "")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+func TestServer_HandleControlMsg_cancelMultipleTasksWithSame(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
+
+	cancel := mf.NewCancelMessage(msg.id)
+	server.HandleControlMsg(cancel)
+	time.Sleep(ShortDuration)
+
+	assertErrorIsNil(t, monitors.Error.nextError(), "unexpected error after control message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
 // TestServer_HandleRequestMsg tests that a message can be handled.
 func TestServer_HandleRequestMsg(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
@@ -42,7 +115,7 @@ func TestServer_HandleRequestMsg_messageAck(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
@@ -62,7 +135,7 @@ func TestServer_HandleRequestMsg_messageRequeue(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
@@ -76,7 +149,7 @@ func TestServer_HandleRequestMsg_messageReject(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
@@ -96,7 +169,7 @@ func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(6, true)
 	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "handling multiple messages")
@@ -124,7 +197,7 @@ func TestServer_HandleRequestMsg_overloadServer(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
 	handleRequestMessages(server, msgs)
@@ -141,7 +214,7 @@ func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
 	handleRequestMessages(server, msgs)
@@ -185,7 +258,7 @@ func TestServer_Shutdown_idempotent_withTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	messages := mf.NewSimpleTaskMessages(4, false)
 	testHandleRequestMessagesSuccess(t, server, monitors, messages, "handling multiple tasks")
@@ -200,7 +273,7 @@ func TestServer_Shutdown_withTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	messages := mf.NewSimpleTaskMessages(4, false)
 	testHandleRequestMessagesSuccess(t, server, monitors, messages, "handling multiple tasks")
@@ -213,7 +286,7 @@ func TestServer_Shutdown_withUnstoppableTask(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
 	server, monitors := NewServer(StandardHandlerID, handler.Handle)
-	mf := NewMessageFactory(StandardHandlerID)
+	mf := NewMessageFactory()
 
 	msg := mf.NewUnstoppableTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling multiple tasks")
@@ -339,7 +412,7 @@ func NewStandardHandler(controller *TaskController) *StandardHandler {
 }
 
 func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Task, error) {
-	data := &MessageData{}
+	data := &MessageDataRequest{}
 	if err := json.Unmarshal(body, data); err != nil {
 		return nil, &occamy.WrappedError{
 			BasicErr: occamy.ErrInvalidBody,
@@ -414,9 +487,9 @@ func (m *Message) setStatus(status string) {
 
 // endregion
 
-// region Message Data
+// region Message Data - Request
 
-type MessageData struct {
+type MessageDataRequest struct {
 	ID         string
 	Expandable bool
 	TaskGroup  string
@@ -424,22 +497,46 @@ type MessageData struct {
 
 // endregion
 
+// region Message Data - Control
+
+type MessageDataControl struct {
+	ID     string
+	Cancel bool
+}
+
+// endregion
+
 // region Message Factory
 
 type MessageFactory struct {
-	count   int32
-	handler string
+	count                int32
+	handler              string
+	includeHandlerHeader bool
 }
 
-func NewMessageFactory(handlerID string) *MessageFactory {
+func NewMessageFactory() *MessageFactory {
 	return &MessageFactory{
-		count:   0,
-		handler: handlerID,
+		count: 0,
 	}
 }
 
+func NewMessageFactoryWithHandlerID(handlerID string) *MessageFactory {
+	return &MessageFactory{
+		count:                0,
+		handler:              handlerID,
+		includeHandlerHeader: true,
+	}
+}
+
+func (mf *MessageFactory) NewCancelMessage(id string) *Message {
+	return mf.convertControlToMessage(MessageDataControl{
+		ID:     id,
+		Cancel: true,
+	})
+}
+
 func (mf *MessageFactory) NewSimpleTaskMessage(expandable bool) *Message {
-	return mf.convertToMessage(MessageData{
+	return mf.convertRequestToMessage(MessageDataRequest{
 		ID:         fmt.Sprintf("simple_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupSimple,
@@ -456,16 +553,16 @@ func (mf *MessageFactory) NewSimpleTaskMessages(n int, expandable bool) []*Messa
 }
 
 func (mf *MessageFactory) NewUnstoppableTaskMessage(expandable bool) *Message {
-	return mf.convertToMessage(MessageData{
+	return mf.convertRequestToMessage(MessageDataRequest{
 		ID:         fmt.Sprintf("unstoppable_%s", mf.nextIDSuffix()),
 		Expandable: expandable,
 		TaskGroup:  TaskGroupUnstoppable,
 	})
 }
 
-func (mf *MessageFactory) convertToMessage(data MessageData) *Message {
+func (mf *MessageFactory) convertControlToMessage(data MessageDataControl) *Message {
 	headers := make(occamy.Headers)
-	headers[HeaderKeyHandlerID] = mf.handler
+	headers[HeaderKeyTaskID] = data.ID
 
 	body, err := json.Marshal(data)
 	if err != nil {
@@ -474,7 +571,27 @@ func (mf *MessageFactory) convertToMessage(data MessageData) *Message {
 
 	return &Message{
 		id:      data.ID,
-		headers: nil,
+		headers: headers,
+		body:    body,
+		status:  MessageStatusOpen,
+		mutex:   &sync.Mutex{},
+	}
+}
+
+func (mf *MessageFactory) convertRequestToMessage(data MessageDataRequest) *Message {
+	headers := make(occamy.Headers)
+	if mf.includeHandlerHeader {
+		headers[HeaderKeyHandlerID] = mf.handler
+	}
+
+	body, err := json.Marshal(data)
+	if err != nil {
+		panic(fmt.Sprintf("unable to continue test as message data could not be marshaled into the body of a message: %v", err))
+	}
+
+	return &Message{
+		id:      data.ID,
+		headers: headers,
 		body:    body,
 		status:  MessageStatusOpen,
 		mutex:   &sync.Mutex{},
@@ -611,12 +728,32 @@ func (task *SimpleTask) Expand(n int) []occamy.Task {
 	return tasks
 }
 
-func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, _ []byte) error {
+func (task *SimpleTask) Handle(_ context.Context, _ occamy.Headers, body []byte) error {
+	message := &MessageDataControl{}
+	if err := json.Unmarshal(body, message); err != nil {
+		return err
+	}
+
+	if message.ID != task.id {
+		return fmt.Errorf("control message sent to wrong task")
+	}
+
+	switch {
+	case message.Cancel:
+		task.stop()
+	}
+
 	return nil
 }
 
 func (task *SimpleTask) assistantID() string {
 	return fmt.Sprintf("%s_assistant", task.id)
+}
+
+func (task *SimpleTask) stop() {
+	task.stopOnce.Do(func() {
+		close(task.stopCh)
+	})
 }
 
 // endregion
