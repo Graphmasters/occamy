@@ -46,28 +46,28 @@ func (NopErrorMonitor) RecordError(_ error) {}
 
 type LatencyMonitor interface {
 	RecordProcessDuration(process string, duration time.Duration)
-	RecordTaskDuration(handler string, group string, status SlotStatus, duration time.Duration)
+	RecordTaskDuration(group string, status SlotStatus, duration time.Duration)
 }
 
 type NopLatencyMonitor struct{}
 
 func (NopLatencyMonitor) RecordProcessDuration(_ string, _ time.Duration) {}
 
-func (NopLatencyMonitor) RecordTaskDuration(_ string, _ string, _ SlotStatus, _ time.Duration) {}
+func (NopLatencyMonitor) RecordTaskDuration(_ string, _ SlotStatus, _ time.Duration) {}
 
 // endregion
 
 // region Resource Monitor
 
 type ResourceMonitor interface {
-	RecordTaskStarting(handler string, group string, status SlotStatus)
-	RecordTaskStopping(handler string, group string, status SlotStatus)
+	RecordTaskStarting(group string, status SlotStatus)
+	RecordTaskStopping(group string, status SlotStatus)
 }
 
 type NopResourceMonitor struct{}
 
-func (NopResourceMonitor) RecordTaskStarting(_ string, _ string, _ SlotStatus) {}
+func (NopResourceMonitor) RecordTaskStarting(_ string, _ SlotStatus) {}
 
-func (NopResourceMonitor) RecordTaskStopping(_ string, _ string, _ SlotStatus) {}
+func (NopResourceMonitor) RecordTaskStopping(_ string, _ SlotStatus) {}
 
 // endregion

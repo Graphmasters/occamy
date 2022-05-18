@@ -245,10 +245,9 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 	return true
 }
 
-func (server *Server) addToExternalTasks(handlerID string, task Task) {
+func (server *Server) addToExternalTasks(task Task) {
 	properties := properties{
-		handler: handlerID,
-		state:   slotStatusExternal,
+		state: slotStatusExternal,
 	}
 
 	server.externalTasksMutex.Lock()
@@ -264,13 +263,13 @@ func (server *Server) addToExternalTasks(handlerID string, task Task) {
 func (server *Server) adjustResourcesTaskStarting(state slotStatus, taskType string) {
 	server.resourceCounts[state].increase()
 	server.resourceCounts[slotStatusEmpty].decrease()
-	server.config.Monitors.Resource.RecordTaskStarting(server.config.HandlerID, taskType, state.export())
+	server.config.Monitors.Resource.RecordTaskStarting(taskType, state.export())
 }
 
 func (server *Server) adjustResourcesTaskStopping(state slotStatus, taskType string) {
 	server.resourceCounts[state].decrease()
 	server.resourceCounts[slotStatusEmpty].increase()
-	server.config.Monitors.Resource.RecordTaskStopping(server.config.HandlerID, taskType, state.export())
+	server.config.Monitors.Resource.RecordTaskStopping(taskType, state.export())
 }
 
 // checkRequestHeader checks if the headers
@@ -390,8 +389,7 @@ func (server *Server) expandLocal() {
 		slot := server.slots[index]
 
 		properties := properties{
-			handler: slot.properties.handler,
-			state:   slotStatusUnprotected,
+			state: slotStatusUnprotected,
 		}
 		if slot.properties.state == slotStatusExternal {
 			properties.state = slotStatusExternal
@@ -427,7 +425,7 @@ func (server *Server) handleExternalRequest(msg Message) {
 		return
 	}
 
-	server.addToExternalTasks(server.config.HandlerID, task)
+	server.addToExternalTasks(task)
 }
 
 // msgAck acknowledges the delivery of message i.e. it was successfully handled.
@@ -459,7 +457,7 @@ func (server *Server) msgReject(msg Message, requeue bool) {
 // recordTaskDuration records the task duration.
 func (server *Server) recordTaskDuration(startTime time.Time, status slotStatus, taskType string) {
 	latency := time.Since(startTime)
-	server.config.Monitors.Latency.RecordTaskDuration(server.config.HandlerID, taskType, status.export(), latency)
+	server.config.Monitors.Latency.RecordTaskDuration(taskType, status.export(), latency)
 }
 
 // recordTaskDuration records the task duration.

@@ -30,7 +30,7 @@ const (
 
 // TestServer_HandleControlMsg tests that a control message can be handled.
 func TestServer_HandleControlMsg(t *testing.T) {
-	server, monitors := NewServer("", nil)
+	server, monitors := NewServer(nil)
 	mf := NewMessageFactory()
 
 	msg := mf.NewCancelMessage("non-existent")
@@ -46,7 +46,7 @@ func TestServer_HandleControlMsg(t *testing.T) {
 func TestServer_HandleControlMsg_cancelMultipleTasksWithSameID(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -69,7 +69,7 @@ func TestServer_HandleControlMsg_cancelMultipleTasksWithSameID(t *testing.T) {
 func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -93,7 +93,7 @@ func TestServer_HandleControlMsg_cancelTask(t *testing.T) {
 func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(4, false)
@@ -119,7 +119,7 @@ func TestServer_HandleControlMsg_cancelTaskOneOfMultipleTasks(t *testing.T) {
 func TestServer_HandleControlMsg_requestMessage(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -132,7 +132,7 @@ func TestServer_HandleControlMsg_requestMessage(t *testing.T) {
 func TestServer_HandleRequestMsg(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -145,7 +145,7 @@ func TestServer_HandleRequestMsg(t *testing.T) {
 func TestServer_HandleRequestMsg_messageAck(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -165,7 +165,7 @@ func TestServer_HandleRequestMsg_messageAck(t *testing.T) {
 func TestServer_HandleRequestMsg_messageRequeue(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -179,7 +179,7 @@ func TestServer_HandleRequestMsg_messageRequeue(t *testing.T) {
 func TestServer_HandleRequestMsg_messageReject(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewSimpleTaskMessage(false)
@@ -199,7 +199,7 @@ func TestServer_HandleRequestMsg_messageReject(t *testing.T) {
 func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(6, true)
@@ -227,7 +227,7 @@ func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 func TestServer_HandleRequestMsg_overloadServer(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
@@ -244,7 +244,7 @@ func TestServer_HandleRequestMsg_overloadServer(t *testing.T) {
 func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msgs := mf.NewSimpleTaskMessages(DefaultResources+1, true)
@@ -270,14 +270,14 @@ func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 // TestServer_Shutdown tests that the shutdown can be successfully called and
 // yield no errors.
 func TestServer_Shutdown(t *testing.T) {
-	server, monitors := NewServer(StandardHandlerID, nil)
+	server, monitors := NewServer(nil)
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
 // TestServer_Shutdown_idempotent tests that shutdown can be successfully called
 // multiple times.
 func TestServer_Shutdown_idempotent(t *testing.T) {
-	server, monitors := NewServer(StandardHandlerID, nil)
+	server, monitors := NewServer(nil)
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
@@ -288,7 +288,7 @@ func TestServer_Shutdown_idempotent(t *testing.T) {
 func TestServer_Shutdown_idempotent_withTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	messages := mf.NewSimpleTaskMessages(4, false)
@@ -303,7 +303,7 @@ func TestServer_Shutdown_idempotent_withTasks(t *testing.T) {
 func TestServer_Shutdown_withTasks(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	messages := mf.NewSimpleTaskMessages(4, false)
@@ -316,7 +316,7 @@ func TestServer_Shutdown_withTasks(t *testing.T) {
 func TestServer_Shutdown_withUnstoppableTask(t *testing.T) {
 	controller := NewTaskController()
 	handler := NewStandardHandler(controller)
-	server, monitors := NewServer(StandardHandlerID, handler.Handle)
+	server, monitors := NewServer(handler.Handle)
 	mf := NewMessageFactory()
 
 	msg := mf.NewUnstoppableTaskMessage(false)
@@ -432,8 +432,6 @@ func joinComments(primary, secondary string) string {
 
 // region Handler - Standard
 
-const StandardHandlerID = "standard_handler"
-
 type StandardHandler struct {
 	controller *TaskController
 }
@@ -469,8 +467,7 @@ func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Ta
 // region Header Keys
 
 const (
-	HeaderKeyTaskID    = "task_id"
-	HeaderKeyHandlerID = "handler_id"
+	HeaderKeyTaskID = "task_id"
 )
 
 // endregion
@@ -540,22 +537,12 @@ type MessageDataControl struct {
 // region Message Factory
 
 type MessageFactory struct {
-	count                int32
-	handler              string
-	includeHandlerHeader bool
+	count int32
 }
 
 func NewMessageFactory() *MessageFactory {
 	return &MessageFactory{
 		count: 0,
-	}
-}
-
-func NewMessageFactoryWithHandlerID(handlerID string) *MessageFactory {
-	return &MessageFactory{
-		count:                0,
-		handler:              handlerID,
-		includeHandlerHeader: true,
 	}
 }
 
@@ -611,9 +598,6 @@ func (mf *MessageFactory) convertControlToMessage(data MessageDataControl) *Mess
 
 func (mf *MessageFactory) convertRequestToMessage(data MessageDataRequest) *Message {
 	headers := make(occamy.Headers)
-	if mf.includeHandlerHeader {
-		headers[HeaderKeyHandlerID] = mf.handler
-	}
 
 	body, err := json.Marshal(data)
 	if err != nil {
@@ -879,7 +863,7 @@ const (
 	DefaultResources = 8
 )
 
-func NewServer(handlerID string, handler occamy.Handler) (*occamy.Server, Monitors) {
+func NewServer(handler occamy.Handler) (*occamy.Server, Monitors) {
 	monitors := NewMonitors(DefaultResources)
 	server := occamy.NewServer(occamy.ServerConfig{
 		Slots:               DefaultResources,
@@ -887,8 +871,6 @@ func NewServer(handlerID string, handler occamy.Handler) (*occamy.Server, Monito
 		ExpansionPeriod:     0,
 		KillTimeout:         100 * time.Millisecond,
 		HeaderKeyTaskID:     HeaderKeyTaskID,
-		HeaderKeyHandlerID:  HeaderKeyHandlerID,
-		HandlerID:           handlerID,
 		Handler:             handler,
 		Monitors: occamy.Monitors{
 			Error:    monitors.Error,
@@ -1017,7 +999,6 @@ func (em *ErrorMonitor) nextError() error {
 // region Monitor - Resource
 
 type ResourceMonitor struct {
-	handlers map[string]int
 	groups   map[string]int
 	statuses map[occamy.SlotStatus]int
 
@@ -1026,7 +1007,6 @@ type ResourceMonitor struct {
 
 func NewResourceMonitor(resources int) *ResourceMonitor {
 	rm := &ResourceMonitor{
-		handlers: make(map[string]int),
 		groups:   make(map[string]int),
 		statuses: make(map[occamy.SlotStatus]int),
 		mutex:    &sync.Mutex{},
@@ -1036,18 +1016,16 @@ func NewResourceMonitor(resources int) *ResourceMonitor {
 	return rm
 }
 
-func (rm *ResourceMonitor) RecordTaskStarting(handler string, group string, status occamy.SlotStatus) {
+func (rm *ResourceMonitor) RecordTaskStarting(group string, status occamy.SlotStatus) {
 	rm.mutex.Lock()
-	rm.handlers[handler]++
 	rm.groups[group]++
 	rm.statuses[status]++
 	rm.statuses[occamy.SlotStatusEmpty]--
 	rm.mutex.Unlock()
 }
 
-func (rm *ResourceMonitor) RecordTaskStopping(handler string, group string, status occamy.SlotStatus) {
+func (rm *ResourceMonitor) RecordTaskStopping(group string, status occamy.SlotStatus) {
 	rm.mutex.Lock()
-	rm.handlers[handler]--
 	rm.groups[group]--
 	rm.statuses[status]--
 	rm.statuses[occamy.SlotStatusEmpty]++

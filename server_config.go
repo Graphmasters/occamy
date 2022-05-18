@@ -27,12 +27,7 @@ type ServerConfig struct {
 	// corresponding to this key will be treated as the task ID.
 	HeaderKeyTaskID string
 
-	// TODO: Remove this. It is only needed for the multi-handler server
-	// which will be introduced later.
-	HeaderKeyHandlerID string
-
-	HandlerID string
-	Handler   Handler
+	Handler Handler
 
 	Monitors Monitors
 }
