@@ -28,6 +28,109 @@ const (
 	ShortDuration = 10 * time.Millisecond
 )
 
+// TestServer_Expand tests that the expand method can be called without error.
+func TestServer_Expand(t *testing.T) {
+	server, monitors := NewServer(nil)
+
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Expand_expandableExternalTask tests that calling Expand while
+// there is an "external" task will be added to a slot and after a second call
+// of Expand will use all available resources.
+func TestServer_Expand_expandableExternalTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	server.HandleControlMsg(msg)
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after request message in control handler")
+
+	time.Sleep(ShortDuration)
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 0, 0, 1, "resources after expand")
+
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after second expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 0, 0, DefaultResources, "resources after second expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Expand_expandableExternalTask tests that calling Expand while
+// there is a protected expandable task will use all available resources.
+func TestServer_Expand_expandableProtectedTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, DefaultResources-1, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Expand_expansionBuffer tests that the Expand method will respect
+// the expansion buffer.
+func TestServer_Expand_expansionBuffer(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	monitors := NewMonitors(DefaultResources)
+	server := occamy.NewServer(occamy.ServerConfig{
+		Slots:               DefaultResources,
+		ExpansionSlotBuffer: 2,
+		ExpansionPeriod:     0,
+		KillTimeout:         100 * time.Millisecond,
+		HeaderKeyTaskID:     HeaderKeyTaskID,
+		Handler:             handler.Handle,
+		Monitors: occamy.Monitors{
+			Error:    monitors.Error,
+			Latency:  monitors.Latency,
+			Resource: monitors.Resource,
+		},
+	})
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 2, 1, DefaultResources-3, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Expand_unexpandableProtectedTask tests that Expand will do nothing
+// when there is a task that can not be expanded.
+func TestServer_Expand_unexpandableProtectedTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.Expand()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
 // TestServer_HandleControlMsg tests that a control message can be handled.
 func TestServer_HandleControlMsg(t *testing.T) {
 	server, monitors := NewServer(nil)
