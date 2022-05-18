@@ -70,7 +70,7 @@ func NewServer(config ServerConfig) *Server {
 
 // Expand runs the expansion processes.
 func (server *Server) Expand() {
-	server.expandLocal()
+	server.expandInternal()
 	server.expandExternal()
 }
 
@@ -370,8 +370,8 @@ func (server *Server) expandExternal() {
 	server.externalTasksMutex.Unlock()
 }
 
-// expandLocal expands the tasks already running on the server.
-func (server *Server) expandLocal() {
+// expandInternal expands the tasks already running on the server.
+func (server *Server) expandInternal() {
 	if server.resourceCounts[slotStatusEmpty].isEqual(server.config.Slots) || server.findSuitableSlotCount(slotStatusProtected-1) == 0 {
 		return
 	}
