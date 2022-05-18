@@ -63,9 +63,15 @@ func NewServer(config ServerConfig) *Server {
 	server.close = make(chan struct{})
 	server.once = &sync.Once{}
 
-	go startPeriodicProcess(server.expand, config.ExpansionPeriod, server.close)
+	go startPeriodicProcess(server.Expand, config.ExpansionPeriod, server.close)
 
 	return server
+}
+
+// Expand runs the expansion processes.
+func (server *Server) Expand() {
+	server.expandLocal()
+	server.expandExternal()
 }
 
 // HandleControlMsg handles a control method.
@@ -334,12 +340,6 @@ func (server *Server) findSuitableSlotCount(state slotStatus) int {
 	}
 
 	return count
-}
-
-// expand runs the expansion processes.
-func (server *Server) expand() {
-	server.expandLocal()
-	server.expandExternal()
 }
 
 // expandExternal runs tasks that were added externally i.e. via the control
