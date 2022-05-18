@@ -370,6 +370,89 @@ func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
 
+// TestServer_HandleRequestMsg_postExpansionExternal tests that unprotected
+// external tasks can be overwritten by incoming request messages.
+func TestServer_HandleRequestMsg_postExpansionExternal(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	server.HandleControlMsg(msgA)
+	time.Sleep(ShortDuration)
+
+	server.Expand()
+	server.Expand()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 0, 0, DefaultResources, "resources after expansion")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, 0, DefaultResources-1, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_postExpansionExternal tests that unprotected
+// internal tasks can be overwritten by incoming request messages.
+func TestServer_HandleRequestMsg_postExpansionInternal(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgA, "handling single message")
+
+	server.Expand()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, DefaultResources-1, 0, "resources after expand")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 2, DefaultResources-2, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_postExpansionWithExpansionBuffer tests that
+// messages are correctly handled after expansion when there is an expansion
+// buffer.
+func TestServer_HandleRequestMsg_postExpansionWithExpansionBuffer(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	monitors := NewMonitors(DefaultResources)
+	server := occamy.NewServer(occamy.ServerConfig{
+		Slots:               DefaultResources,
+		ExpansionSlotBuffer: 2,
+		ExpansionPeriod:     0,
+		KillTimeout:         100 * time.Millisecond,
+		HeaderKeyTaskID:     HeaderKeyTaskID,
+		Handler:             handler.Handle,
+		Monitors: occamy.Monitors{
+			Error:    monitors.Error,
+			Latency:  monitors.Latency,
+			Resource: monitors.Resource,
+		},
+	})
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgA, "handling single message")
+
+	server.Expand()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 2, 1, DefaultResources-3, 0, "resources after expansion")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 1, 2, DefaultResources-3, 0, "resources after another message")
+
+	msgs := mf.NewSimpleTaskMessages(2, true)
+	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 4, DefaultResources-4, 0, "resources after more messages")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
 // TestServer_Shutdown tests that the shutdown can be successfully called and
 // yield no errors.
 func TestServer_Shutdown(t *testing.T) {
