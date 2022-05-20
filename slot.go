@@ -6,18 +6,12 @@ import (
 	"time"
 )
 
-// properties represent the properties of the slot and task
-type properties struct {
-	state slotStatus // The state of the slot i.e. empty, protected or unprotected.
-}
-
 // externalTask represents a request message that was handled via the control
 // handler. It is to be kept by the server and added if there is space in the
 // expansion process.
 type externalTask struct {
-	task       Task        // The task
-	details    TaskDetails // The task's details
-	properties properties  // The task's properties
+	task    Task        // The task
+	details TaskDetails // The task's details
 }
 
 // slot represents a slot for a task in the server.

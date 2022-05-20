@@ -136,11 +136,7 @@ func (server *Server) HandleRequestMsg(msg Message) {
 		return
 	}
 
-	properties := properties{
-		state: slotStatusProtected,
-	}
-
-	if !server.addAndDoTask(task, properties, msg) {
+	if !server.addAndDoTask(task, slotStatusProtected, msg) {
 		server.msgReject(msg, true)
 		details := task.Details()
 		err := NewDetailedError(ErrTaskNotAdded, fmt.Sprintf("unable to add task with id %s", details.ID))
@@ -191,11 +187,11 @@ func (server *Server) Shutdown(ctx context.Context) {
 // addAndDoTask attempts to add a task into a suitable
 // slot. A boolean is indicating if the task was
 // successfully added.
-func (server *Server) addAndDoTask(task Task, properties properties, msg Message) bool {
+func (server *Server) addAndDoTask(task Task, status slotStatus, msg Message) bool {
 	server.slotsMutex.Lock()
 	defer server.slotsMutex.Unlock()
 
-	index, ok := server.findSuitableSlotIndex(properties.state)
+	index, ok := server.findSuitableSlotIndex(status)
 	if !ok {
 		return false
 	}
@@ -212,11 +208,11 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 	}
 
 	// Sets task in given slot
-	server.slots[index].setTask(task, properties.state)
+	server.slots[index].setTask(task, status)
 
 	slot := server.slots[index]
 	taskName := slot.getTaskGroup()
-	server.adjustResourcesTaskStarting(properties.state, taskName)
+	server.adjustResourcesTaskStarting(status, taskName)
 	go func() {
 		startTime := time.Now()
 
@@ -229,15 +225,15 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 		//    should be be requeued UNLESS the task completed without any error.
 		case err == ErrTaskInterrupted:
 			defer server.msgReject(msg, true)
-		case err != nil && properties.state == slotStatusProtected:
+		case err != nil && status == slotStatusProtected:
 			defer server.msgReject(msg, false)
 			server.config.Monitors.Error.RecordError(err)
 		default:
 			defer server.msgAck(msg)
 		}
 
-		server.recordTaskDuration(startTime, properties.state, taskName)
-		server.adjustResourcesTaskStopping(properties.state, taskName)
+		server.recordTaskDuration(startTime, status, taskName)
+		server.adjustResourcesTaskStopping(status, taskName)
 
 		slot.empty()
 	}()
@@ -246,15 +242,10 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 }
 
 func (server *Server) addToExternalTasks(task Task) {
-	properties := properties{
-		state: slotStatusExternal,
-	}
-
 	server.externalTasksMutex.Lock()
 	server.externalTasks = append(server.externalTasks, &externalTask{
-		task:       task,
-		details:    task.Details(),
-		properties: properties,
+		task:    task,
+		details: task.Details(),
 	})
 	server.externalTasksMutex.Unlock()
 }
@@ -359,7 +350,7 @@ func (server *Server) expandExternal() {
 			continue
 		}
 
-		ok := server.addAndDoTask(task.task, task.properties, nil)
+		ok := server.addAndDoTask(task.task, slotStatusExternal, nil)
 		if !ok {
 			return
 		}
@@ -388,21 +379,19 @@ func (server *Server) expandLocal() {
 	for _, index := range indices {
 		slot := server.slots[index]
 
-		properties := properties{
-			state: slotStatusUnprotected,
-		}
+		status := slotStatusUnprotected
 		if slot.slotStatus == slotStatusExternal {
-			properties.state = slotStatusExternal
+			status = slotStatusExternal
 		}
 
-		available := server.findSuitableSlotCount(properties.state)
+		available := server.findSuitableSlotCount(status)
 		if available == 0 {
 			return
 		}
 
 		tasks := slot.expand(available)
 		for _, task := range tasks {
-			ok := server.addAndDoTask(task, properties, nil)
+			ok := server.addAndDoTask(task, status, nil)
 			if !ok {
 				return
 			}
