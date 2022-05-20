@@ -212,7 +212,7 @@ func (server *Server) addAndDoTask(task Task, properties properties, msg Message
 	}
 
 	// Sets task in given slot
-	server.slots[index].setTask(task, properties)
+	server.slots[index].setTask(task, properties.state)
 
 	slot := server.slots[index]
 	taskName := slot.getTaskGroup()
@@ -381,7 +381,7 @@ func (server *Server) expandLocal() {
 	// Sorts indices to prioritise by slotStatus
 	indices := rand.Perm(server.config.Slots)
 	sort.Slice(indices, func(i, j int) bool {
-		return server.slots[i].properties.state > server.slots[j].properties.state
+		return server.slots[i].slotStatus > server.slots[j].slotStatus
 	})
 
 	// Attempts to expand tasks (in the order in which they prioritised)
@@ -391,7 +391,7 @@ func (server *Server) expandLocal() {
 		properties := properties{
 			state: slotStatusUnprotected,
 		}
-		if slot.properties.state == slotStatusExternal {
+		if slot.slotStatus == slotStatusExternal {
 			properties.state = slotStatusExternal
 		}
 
