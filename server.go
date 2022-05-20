@@ -336,7 +336,7 @@ func (server *Server) expand() {
 // expandExternal runs tasks that were added externally i.e. via the control
 // message handler.
 func (server *Server) expandExternal() {
-	available := server.findSuitableSlotCount(slotStatusExternal)
+	available := server.findSuitableSlotCount(slotStatusUnprotectedExternal)
 	if len(server.externalTasks) == 0 || available <= 0 {
 		return
 	}
@@ -350,7 +350,7 @@ func (server *Server) expandExternal() {
 			continue
 		}
 
-		ok := server.addAndDoTask(task.task, slotStatusExternal, nil)
+		ok := server.addAndDoTask(task.task, slotStatusUnprotectedExternal, nil)
 		if !ok {
 			return
 		}
@@ -379,9 +379,9 @@ func (server *Server) expandLocal() {
 	for _, index := range indices {
 		slot := server.slots[index]
 
-		status := slotStatusUnprotected
-		if slot.slotStatus == slotStatusExternal {
-			status = slotStatusExternal
+		status := slotStatusUnprotectedInternal
+		if slot.slotStatus == slotStatusUnprotectedExternal {
+			status = slotStatusUnprotectedExternal
 		}
 
 		available := server.findSuitableSlotCount(status)
