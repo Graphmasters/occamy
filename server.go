@@ -63,13 +63,17 @@ func NewServer(config ServerConfig) *Server {
 	server.close = make(chan struct{})
 	server.once = &sync.Once{}
 
-	go startPeriodicProcess(server.Expand, config.ExpansionPeriod, server.close)
+	go startPeriodicProcess(server.ExpandTasks, config.ExpansionPeriod, server.close)
 
 	return server
 }
 
-// Expand runs the expansion processes.
-func (server *Server) Expand() {
+// ExpandTasks calls expand on running tasks and runs externally added tasks
+// provided there is sufficient space.
+//
+// It is generally recommended have the server using a periodic expansion. This
+// method has been included so that custom expansion schedules can be performed.
+func (server *Server) ExpandTasks() {
 	server.expandInternal()
 	server.expandExternal()
 }
