@@ -31,10 +31,10 @@ const (
 type slotStatus uint8
 
 const (
-	slotStatusEmpty       slotStatus = iota // The slot is empty.
-	slotStatusExternal                      // The slot contains an external task
-	slotStatusUnprotected                   // The slot is unprotected meaning its task may be cancelled at any time.
-	slotStatusProtected                     // The slot is protected meaning its task will be be done.
+	slotStatusEmpty               slotStatus = iota // The slot is empty.
+	slotStatusUnprotectedExternal                   // The slot contains an unprotected external task
+	slotStatusUnprotectedInternal                   // The slot contains an unprotected internal task
+	slotStatusProtected                             // The slot contains a protected task which must be done (i.e. only killed during shutdown).
 	numSlotStatuses
 )
 
@@ -42,9 +42,9 @@ func (s slotStatus) export() SlotStatus {
 	switch s {
 	case slotStatusEmpty:
 		return SlotStatusEmpty
-	case slotStatusExternal:
+	case slotStatusUnprotectedExternal:
 		return SlotStatusUnprotectedExternal
-	case slotStatusUnprotected:
+	case slotStatusUnprotectedInternal:
 		return SlotStatusUnprotectedInternal
 	case slotStatusProtected:
 		return SlotStatusProtected

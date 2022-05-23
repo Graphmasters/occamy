@@ -6,18 +6,12 @@ import (
 	"time"
 )
 
-// properties represent the properties of the slot and task
-type properties struct {
-	state slotStatus // The state of the slot i.e. empty, protected or unprotected.
-}
-
 // externalTask represents a request message that was handled via the control
 // handler. It is to be kept by the server and added if there is space in the
 // expansion process.
 type externalTask struct {
-	task       Task        // The task
-	details    TaskDetails // The task's details
-	properties properties  // The task's properties
+	task    Task        // The task
+	details TaskDetails // The task's details
 }
 
 // slot represents a slot for a task in the server.
@@ -25,7 +19,7 @@ type externalTask struct {
 type slot struct {
 	task       Task        // The task assigned to the slot
 	details    TaskDetails // The details of the task assigned to the slot set by the handler/task
-	properties properties  // The properties of the task and slot set by occamy
+	slotStatus slotStatus
 
 	mutex    sync.Mutex // Lock to prevent clashes when accessing/modifying data.
 	occupied *semaphore // occupied is activated when a task is set and deactivated when the slot is emptied.
@@ -35,11 +29,9 @@ type slot struct {
 // newSlot creates a new empty slot.
 func newSlot() *slot {
 	slot := &slot{
-		properties: properties{
-			state: slotStatusEmpty,
-		},
-		occupied: newSemaphore(false),
-		usable:   newSemaphore(false),
+		slotStatus: slotStatusEmpty,
+		occupied:   newSemaphore(false),
+		usable:     newSemaphore(false),
 	}
 
 	return slot
@@ -66,8 +58,7 @@ func (s *slot) empty() {
 	if s.occupied.isActive() {
 		s.task = nil
 		s.details = TaskDetails{}
-		s.properties = properties{}
-		s.properties.state = slotStatusEmpty
+		s.slotStatus = slotStatusEmpty
 		s.usable.deactivate()
 		s.occupied.deactivate()
 	}
@@ -133,7 +124,7 @@ func (s *slot) handleControlMsg(headers Headers, body []byte) error {
 // isEmpty returns if the slotStatus of the task is empty.
 func (s *slot) isEmpty() bool {
 	s.mutex.Lock()
-	result := s.properties.state == slotStatusEmpty
+	result := s.slotStatus == slotStatusEmpty
 	s.mutex.Unlock()
 	return result
 }
@@ -142,7 +133,7 @@ func (s *slot) isEmpty() bool {
 // nolint
 func (s *slot) isProtected() bool {
 	s.mutex.Lock()
-	result := s.properties.state == slotStatusProtected
+	result := s.slotStatus == slotStatusProtected
 	s.mutex.Unlock()
 	return result
 }
@@ -171,7 +162,7 @@ func (s *slot) newContext() (context.Context, func()) {
 
 // setTask sets the task along with the other relevant information.
 // This must only ever be done on an empty task.
-func (s *slot) setTask(task Task, properties properties) {
+func (s *slot) setTask(task Task, status slotStatus) {
 	if task == nil {
 		return
 	}
@@ -179,7 +170,7 @@ func (s *slot) setTask(task Task, properties properties) {
 	s.mutex.Lock()
 	s.task = task
 	s.details = task.Details()
-	s.properties = properties
+	s.slotStatus = status
 
 	s.occupied.activate()
 	s.usable.activate()
@@ -188,9 +179,9 @@ func (s *slot) setTask(task Task, properties properties) {
 
 func (s *slot) state() slotStatus {
 	s.mutex.Lock()
-	state := s.properties.state
+	status := s.slotStatus
 	s.mutex.Unlock()
-	return state
+	return status
 }
 
 // waitTillEmpty waits until the slot is empty or until the timeout is reached.
