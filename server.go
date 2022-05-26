@@ -63,9 +63,19 @@ func NewServer(config ServerConfig) *Server {
 	server.close = make(chan struct{})
 	server.once = &sync.Once{}
 
-	go startPeriodicProcess(server.expand, config.ExpansionPeriod, server.close)
+	go startPeriodicProcess(server.ExpandTasks, config.ExpansionPeriod, server.close)
 
 	return server
+}
+
+// ExpandTasks calls expand on running tasks and runs externally added tasks
+// provided there is sufficient space.
+//
+// It is generally recommended have the server using a periodic expansion. This
+// method has been included so that custom expansion schedules can be performed.
+func (server *Server) ExpandTasks() {
+	server.expandInternal()
+	server.expandExternal()
 }
 
 // HandleControlMsg handles a control method.
@@ -327,12 +337,6 @@ func (server *Server) findSuitableSlotCount(state slotStatus) int {
 	return count
 }
 
-// expand runs the expansion processes.
-func (server *Server) expand() {
-	server.expandLocal()
-	server.expandExternal()
-}
-
 // expandExternal runs tasks that were added externally i.e. via the control
 // message handler.
 func (server *Server) expandExternal() {
@@ -361,8 +365,8 @@ func (server *Server) expandExternal() {
 	server.externalTasksMutex.Unlock()
 }
 
-// expandLocal expands the tasks already running on the server.
-func (server *Server) expandLocal() {
+// expandInternal expands the tasks already running on the server.
+func (server *Server) expandInternal() {
 	if server.resourceCounts[slotStatusEmpty].isEqual(server.config.Slots) || server.findSuitableSlotCount(slotStatusProtected-1) == 0 {
 		return
 	}

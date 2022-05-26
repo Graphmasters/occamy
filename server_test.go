@@ -28,6 +28,109 @@ const (
 	ShortDuration = 10 * time.Millisecond
 )
 
+// TestServer_ExpandTasks tests that the expand method can be called without error.
+func TestServer_ExpandTasks(t *testing.T) {
+	server, monitors := NewServer(nil)
+
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_ExpandTasks_expandableExternalTask tests that calling ExpandTasks while
+// there is an "external" task will be added to a slot and after a second call
+// of ExpandTasks will use all available resources.
+func TestServer_ExpandTasks_expandableExternalTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	server.HandleControlMsg(msg)
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after request message in control handler")
+
+	time.Sleep(ShortDuration)
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 0, 0, 1, "resources after expand")
+
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after second expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 0, 0, DefaultResources, "resources after second expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_Expand_expandableExternalTask tests that calling ExpandTasks while
+// there is a protected expandable task will use all available resources.
+func TestServer_ExpandTasks_expandableProtectedTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, DefaultResources-1, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_ExpandTasks_expansionBuffer tests that the ExpandTasks method will respect
+// the expansion buffer.
+func TestServer_ExpandTasks_expansionBuffer(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	monitors := NewMonitors(DefaultResources)
+	server := occamy.NewServer(occamy.ServerConfig{
+		Slots:               DefaultResources,
+		ExpansionSlotBuffer: 2,
+		ExpansionPeriod:     0,
+		KillTimeout:         100 * time.Millisecond,
+		HeaderKeyTaskID:     HeaderKeyTaskID,
+		Handler:             handler.Handle,
+		Monitors: occamy.Monitors{
+			Error:    monitors.Error,
+			Latency:  monitors.Latency,
+			Resource: monitors.Resource,
+		},
+	})
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 2, 1, DefaultResources-3, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_ExpandTasks_unexpandableProtectedTask tests that ExpandTasks will do nothing
+// when there is a task that can not be expanded.
+func TestServer_ExpandTasks_unexpandableProtectedTask(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msg := mf.NewSimpleTaskMessage(false)
+	testHandleRequestMessageSuccess(t, server, monitors, msg, "")
+
+	server.ExpandTasks()
+	assertErrorIsNil(t, monitors.Error.nextError(), "error after expand")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
 // TestServer_HandleControlMsg tests that a control message can be handled.
 func TestServer_HandleControlMsg(t *testing.T) {
 	server, monitors := NewServer(nil)
@@ -263,6 +366,89 @@ func TestServer_HandleRequestMsg_overloadServerTwice(t *testing.T) {
 	assertErrorMonitorErrorCount(t, monitors.Error, 1, "handling more requests than possible should trigger error (second attempt)")
 	assertErrorIsNotNil(t, monitors.Error.nextError(), "handling more requests than possible should trigger error (second attempt)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, DefaultResources, 0, 0, "resources after overloading (second attempt)")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_postExpansionExternal tests that unprotected
+// external tasks can be overwritten by incoming request messages.
+func TestServer_HandleRequestMsg_postExpansionExternal(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	server.HandleControlMsg(msgA)
+	time.Sleep(ShortDuration)
+
+	server.ExpandTasks()
+	server.ExpandTasks()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 0, 0, DefaultResources, "resources after expansion")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, 0, DefaultResources-1, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_postExpansionExternal tests that unprotected
+// internal tasks can be overwritten by incoming request messages.
+func TestServer_HandleRequestMsg_postExpansionInternal(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	server, monitors := NewServer(handler.Handle)
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgA, "handling single message")
+
+	server.ExpandTasks()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 1, DefaultResources-1, 0, "resources after expand")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 2, DefaultResources-2, 0, "resources after expand")
+
+	testServerShutdownSuccess(t, server, monitors, DefaultResources)
+}
+
+// TestServer_HandleRequestMsg_postExpansionWithExpansionBuffer tests that
+// messages are correctly handled after expansion when there is an expansion
+// buffer.
+func TestServer_HandleRequestMsg_postExpansionWithExpansionBuffer(t *testing.T) {
+	controller := NewTaskController()
+	handler := NewStandardHandler(controller)
+	monitors := NewMonitors(DefaultResources)
+	server := occamy.NewServer(occamy.ServerConfig{
+		Slots:               DefaultResources,
+		ExpansionSlotBuffer: 2,
+		ExpansionPeriod:     0,
+		KillTimeout:         100 * time.Millisecond,
+		HeaderKeyTaskID:     HeaderKeyTaskID,
+		Handler:             handler.Handle,
+		Monitors: occamy.Monitors{
+			Error:    monitors.Error,
+			Latency:  monitors.Latency,
+			Resource: monitors.Resource,
+		},
+	})
+	mf := NewMessageFactory()
+
+	msgA := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgA, "handling single message")
+
+	server.ExpandTasks()
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 2, 1, DefaultResources-3, 0, "resources after expansion")
+
+	msgB := mf.NewSimpleTaskMessage(true)
+	testHandleRequestMessageSuccess(t, server, monitors, msgB, "handling single message")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 1, 2, DefaultResources-3, 0, "resources after another message")
+
+	msgs := mf.NewSimpleTaskMessages(2, true)
+	testHandleRequestMessagesSuccess(t, server, monitors, msgs, "")
+	assertResourceMonitorStatusMatch(t, monitors.Resource, 0, 4, DefaultResources-4, 0, "resources after more messages")
 
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
 }
