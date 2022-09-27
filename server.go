@@ -112,6 +112,7 @@ func (server *Server) HandleControlMsg(msg Message) {
 		go func(slot *slot) {
 			err := slot.handleControlMsg(headers, msg.Body())
 			if err != nil {
+				err = convertErrorIfNotOccamyError(err, ErrKindUnknownHandlerError)
 				server.config.Monitors.Error.RecordError(err)
 			}
 			wg.Done()
@@ -134,7 +135,7 @@ func (server *Server) HandleRequestMsg(msg Message) {
 	err := server.checkRequestHeaders(headers)
 	if err != nil {
 		server.msgReject(msg, false)
-		err = wrapErrorIfNotLocalErrorOrMismatch(err, ErrInvalidHeader)
+		err = convertErrorIfNotLocalErrorOrMismatch(err, ErrKindInvalidHeader)
 		server.config.Monitors.Error.RecordError(err)
 		return
 	}
@@ -142,6 +143,7 @@ func (server *Server) HandleRequestMsg(msg Message) {
 	task, err := server.config.Handler(headers, msg.Body())
 	if err != nil {
 		server.msgReject(msg, false)
+		err = convertErrorIfNotOccamyError(err, ErrKindUnknownHandlerError)
 		server.config.Monitors.Error.RecordError(err)
 		return
 	}
@@ -149,7 +151,7 @@ func (server *Server) HandleRequestMsg(msg Message) {
 	if !server.addAndDoTask(task, slotStatusProtected, msg) {
 		server.msgReject(msg, true)
 		details := task.Details()
-		err := NewDetailedError(ErrTaskNotAdded, fmt.Sprintf("unable to add task with id %s", details.ID))
+		err := NewError(fmt.Errorf("unable to add task with id %s", details.ID), ErrKindTaskNotAdded)
 		server.config.Monitors.Error.RecordError(err)
 		return
 	}
@@ -184,8 +186,8 @@ func (server *Server) Shutdown(ctx context.Context) {
 				slot := server.slots[index]
 				slot.kill()
 				if !slot.waitTillEmpty(server.config.KillTimeout) {
-					// TODO: Turn this into a standardised error
-					server.config.Monitors.Error.RecordError(ErrTaskNotKilled)
+					err := NewError(fmt.Errorf("failed to killed error on shutdown"), ErrKindTaskNotKilled)
+					server.config.Monitors.Error.RecordError(err)
 				}
 				wg.Done()
 			}(i)
@@ -212,7 +214,8 @@ func (server *Server) addAndDoTask(task Task, status slotStatus, msg Message) bo
 
 		// Waits for the task to be emptied (i.e killed)
 		if !server.slots[index].waitTillEmpty(server.config.KillTimeout) {
-			server.config.Monitors.Error.RecordError(NewDetailedError(ErrTaskNotKilled, "failed to free task within time limit"))
+			err := NewError(fmt.Errorf("failed to free task within time limit"), ErrKindTaskNotKilled)
+			server.config.Monitors.Error.RecordError(err)
 			return false
 		}
 	}
@@ -228,15 +231,17 @@ func (server *Server) addAndDoTask(task Task, status slotStatus, msg Message) bo
 
 		// Performs task and once it is finished declares it empty. The message is then acked or nacked.
 		err := slot.doTask()
+		errKind, _ := ExtractErrorKind(err)
 		switch {
 		// TODO: The service shouldn't rely on users sending this error. It should
 		//    always be the case that if the service is shutting down (the only
 		//    reason a protected task would be interrupted) then the message
 		//    should be be requeued UNLESS the task completed without any error.
-		case err == ErrTaskInterrupted:
+		case errKind == ErrKindTaskInterrupted:
 			defer server.msgReject(msg, true)
 		case err != nil && status == slotStatusProtected:
 			defer server.msgReject(msg, false)
+			err = convertErrorIfNotOccamyError(err, ErrKindUnknownTaskError)
 			server.config.Monitors.Error.RecordError(err)
 		default:
 			defer server.msgAck(msg)
@@ -408,12 +413,15 @@ func (server *Server) handleExternalRequest(msg Message) {
 	headers := msg.Headers()
 	err := server.checkRequestHeaders(headers)
 	if err != nil {
-		server.config.Monitors.Error.RecordError(ErrInvalidHeader)
+
+		err = convertErrorIfNotOccamyError(err, ErrKindInvalidHeader)
+		server.config.Monitors.Error.RecordError(err)
 		return
 	}
 
 	task, err := server.config.Handler(headers, msg.Body())
 	if err != nil {
+		err = convertErrorIfNotOccamyError(err, ErrKindUnknownHandlerError)
 		server.config.Monitors.Error.RecordError(err)
 		return
 	}
@@ -429,7 +437,7 @@ func (server *Server) msgAck(msg Message) {
 
 	err := msg.Ack()
 	if err != nil {
-		err = wrapErrorIfNotLocalErrorOrMismatch(err, ErrMessageNotAcked)
+		err = convertErrorIfNotLocalErrorOrMismatch(err, ErrKindMessageNotAcked)
 		server.config.Monitors.Error.RecordError(err)
 	}
 }
@@ -442,7 +450,7 @@ func (server *Server) msgReject(msg Message, requeue bool) {
 
 	err := msg.Reject(requeue)
 	if err != nil {
-		err = wrapErrorIfNotLocalErrorOrMismatch(err, ErrMessageNotNacked)
+		err = convertErrorIfNotLocalErrorOrMismatch(err, ErrKindMessageNotNacked)
 		server.config.Monitors.Error.RecordError(err)
 	}
 }

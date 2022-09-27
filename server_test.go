@@ -288,9 +288,10 @@ func TestServer_HandleRequestMsg_messageReject(t *testing.T) {
 	msg := mf.NewSimpleTaskMessage(false)
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling single message")
 
-	controller.stop(msg.id, occamy.ErrInvalidTask)
+	err := fmt.Errorf("error for TestServer_HandleRequestMsg_messageReject")
+	controller.stop(msg.id, err)
 	time.Sleep(ShortDuration)
-	assertErrorEqual(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "no error after the task stopped")
+	assertErrorEqual(t, err, monitors.Error.nextError(), "no error after the task stopped")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources, 0, 0, 0, "resources after server shutdown")
 	assertMessageStatus(t, MessageStatusRejected, msg, "message reject test")
 
@@ -314,12 +315,12 @@ func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 	assertErrorIsNil(t, monitors.Error.nextError(), "errors after stopping tasks")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-4, 4, 0, 0, "resources after stopping tasks")
 
-	controller.stop(msgs[2].id, occamy.ErrInvalidTask)
-	controller.stop(msgs[3].id, occamy.ErrInvalidTask)
+	controller.stop(msgs[2].id, occamy.NewError(fmt.Errorf("stopping msg 2"), occamy.ErrKindInvalidTask))
+	controller.stop(msgs[3].id, occamy.NewError(fmt.Errorf("stopping msg 3"), occamy.ErrKindInvalidTask))
 	time.Sleep(ShortDuration)
 	assertErrorMonitorErrorCount(t, monitors.Error, 2, "check errors after tasks throwing errors")
-	assertErrorIsOccamyError(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (1)")
-	assertErrorIsOccamyError(t, occamy.ErrInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (2)")
+	assertErrorIsOccamyError(t, occamy.ErrKindInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (1)")
+	assertErrorIsOccamyError(t, occamy.ErrKindInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (2)")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-2, 2, 0, 0, "resources after stopping tasks")
 
 	testServerShutdownSuccess(t, server, monitors, DefaultResources)
@@ -509,7 +510,7 @@ func TestServer_Shutdown_withUnstoppableTask(t *testing.T) {
 	testHandleRequestMessageSuccess(t, server, monitors, msg, "handling multiple tasks")
 
 	shutdownServer(server)
-	assertErrorIsOccamyError(t, occamy.ErrTaskNotKilled, monitors.Error.nextError(), "no error after shutdown")
+	assertErrorIsOccamyError(t, occamy.ErrKindTaskNotKilled, monitors.Error.nextError(), "no error after shutdown")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-1, 1, 0, 0, "resources after server shutdown")
 }
 
@@ -534,21 +535,22 @@ func assertErrorIsNil(t *testing.T, err error, comment string) {
 	t.FailNow()
 }
 
-func assertErrorIsOccamyError(t *testing.T, expected occamy.BasicError, actual error, comment string) {
-	if actual == nil {
+func assertErrorIsOccamyError(t *testing.T, expectedKind occamy.ErrKind, err error, comment string) {
+	if err == nil {
 		t.Logf("%s: error was nil", comment)
 		t.FailNow()
 	}
 
-	switch explicitErr := actual.(type) {
-	case occamy.BasicError:
-		assertErrorEqual(t, expected, explicitErr, fmt.Sprintf("%s: error was a simple error", comment))
-	case *occamy.DetailedError:
-		assertErrorEqual(t, expected, explicitErr, fmt.Sprintf("%s: error was a detailed error but the simple part didn't match", comment))
-	case *occamy.WrappedError:
-		assertErrorEqual(t, expected, explicitErr, fmt.Sprintf("%s: error was a wrapped error but the simple part didn't match", comment))
-	default:
-		t.Logf("%s: error was not any known occamy error: %v", comment, actual)
+	kind, ok := occamy.ExtractErrorKind(err)
+	if !ok {
+		t.Log(string(debug.Stack()))
+		t.Logf("%s: error could not have its error kind extracted: %v", comment, err)
+		t.FailNow()
+	}
+
+	if expectedKind != kind {
+		t.Log(string(debug.Stack()))
+		t.Logf("%s: error had kind %v that did not match expected kind %s", comment, kind, expectedKind)
 		t.FailNow()
 	}
 }
@@ -629,10 +631,7 @@ func NewStandardHandler(controller *TaskController) *StandardHandler {
 func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Task, error) {
 	data := &MessageDataRequest{}
 	if err := json.Unmarshal(body, data); err != nil {
-		return nil, &occamy.WrappedError{
-			BasicErr: occamy.ErrInvalidBody,
-			InnerErr: err,
-		}
+		return nil, occamy.NewError(fmt.Errorf("failed to unmarshal as json: %w", err), occamy.ErrKindInvalidBody)
 	}
 
 	switch data.TaskGroup {
@@ -641,10 +640,7 @@ func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Ta
 	case TaskGroupUnstoppable:
 		return NewUnstoppableTask(data.ID, data.Expandable), nil
 	default:
-		return nil, &occamy.DetailedError{
-			BasicErr: occamy.ErrInvalidBody,
-			Cause:    fmt.Sprintf("unknown task group: %s", data.TaskGroup),
-		}
+		return nil, occamy.NewError(fmt.Errorf("unknown task group: %s", data.TaskGroup), occamy.ErrKindInvalidBody)
 	}
 }
 
@@ -939,7 +935,7 @@ func (task *SimpleTask) Do(ctx context.Context) error {
 	case <-task.controller.stopCh(task.id):
 		return task.controller.error(task.id)
 	case <-ctx.Done():
-		return occamy.ErrTaskInterrupted
+		return occamy.NewError(ctx.Err(), occamy.ErrKindTaskInterrupted)
 	}
 }
 
