@@ -2,6 +2,7 @@ package occamy
 
 import (
 	"errors"
+	"fmt"
 )
 
 type ErrKind string
@@ -60,7 +61,7 @@ type Error struct {
 }
 
 // NewError creates a new Error. If the error inputted is nil, then nil will be returned.
-func NewError(err error, kind ErrKind) error {
+func NewError(kind ErrKind, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -69,6 +70,11 @@ func NewError(err error, kind ErrKind) error {
 		kind: kind,
 		err:  err,
 	}
+}
+
+// NewErrorf is equivalent to calling NewError(kind, fmt.Errorf(format, args...)).
+func NewErrorf(kind ErrKind, format string, args ...interface{}) error {
+	return NewError(kind, fmt.Errorf(format, args...))
 }
 
 // Error returns a description of the error and is required to implement the builtin error interface.
@@ -105,7 +111,7 @@ func ExtractErrorKind(err error) (ErrKind, bool) {
 
 func convertErrorIfNotOccamyError(err error, kind ErrKind) error {
 	if _, ok := ExtractErrorKind(err); !ok {
-		return NewError(err, kind)
+		return NewError(kind, err)
 	}
 
 	return err
@@ -114,7 +120,7 @@ func convertErrorIfNotOccamyError(err error, kind ErrKind) error {
 func convertErrorIfNotLocalErrorOrMismatch(err error, kind ErrKind, alternatives ...ErrKind) error {
 	actualKind, ok := ExtractErrorKind(err)
 	if !ok {
-		return NewError(err, kind)
+		return NewError(kind, err)
 	}
 
 	for _, k := range append(alternatives, kind) {
@@ -123,5 +129,5 @@ func convertErrorIfNotLocalErrorOrMismatch(err error, kind ErrKind, alternatives
 		}
 	}
 
-	return NewError(err, kind)
+	return NewError(kind, err)
 }

@@ -2,7 +2,6 @@ package occamy
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"sort"
 	"sync"
@@ -151,7 +150,7 @@ func (server *Server) HandleRequestMsg(msg Message) {
 	if !server.addAndDoTask(task, slotStatusProtected, msg) {
 		server.msgReject(msg, true)
 		details := task.Details()
-		err := NewError(fmt.Errorf("unable to add task with id %s", details.ID), ErrKindTaskNotAdded)
+		err := NewErrorf(ErrKindTaskNotAdded, "unable to add task with id %s", details.ID)
 		server.config.Monitors.Error.RecordError(err)
 		return
 	}
@@ -186,7 +185,7 @@ func (server *Server) Shutdown(ctx context.Context) {
 				slot := server.slots[index]
 				slot.kill()
 				if !slot.waitTillEmpty(server.config.KillTimeout) {
-					err := NewError(fmt.Errorf("failed to killed error on shutdown"), ErrKindTaskNotKilled)
+					err := NewErrorf(ErrKindTaskNotKilled, "failed to killed error on shutdown")
 					server.config.Monitors.Error.RecordError(err)
 				}
 				wg.Done()
@@ -214,7 +213,7 @@ func (server *Server) addAndDoTask(task Task, status slotStatus, msg Message) bo
 
 		// Waits for the task to be emptied (i.e killed)
 		if !server.slots[index].waitTillEmpty(server.config.KillTimeout) {
-			err := NewError(fmt.Errorf("failed to free task within time limit"), ErrKindTaskNotKilled)
+			err := NewErrorf(ErrKindTaskNotKilled, "failed to free task within time limit")
 			server.config.Monitors.Error.RecordError(err)
 			return false
 		}

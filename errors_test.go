@@ -11,7 +11,7 @@ import (
 func TestNewError(t *testing.T) {
 	const kind = occamy.ErrKindInvalidHeader
 	innerErr := errors.New("error")
-	err := occamy.NewError(innerErr, kind)
+	err := occamy.NewError(kind, innerErr)
 	assertError(t, err, "NewError must return error")
 	assertNotEqual(t, err, innerErr, "NewError must return error different to inputted error")
 
@@ -20,13 +20,13 @@ func TestNewError(t *testing.T) {
 }
 
 func TestNewError_nil(t *testing.T) {
-	err := occamy.NewError(nil, occamy.ErrKindUnknownTaskError)
+	err := occamy.NewError(occamy.ErrKindUnknownTaskError, nil)
 	assertNoError(t, err, "NewError should return nil error when passed nil error")
 }
 
 func TestError_Unwrap(t *testing.T) {
 	innerErr := errors.New("error")
-	err := occamy.NewError(innerErr, occamy.ErrKindUnknownTaskError)
+	err := occamy.NewError(occamy.ErrKindUnknownTaskError, innerErr)
 	assertError(t, err, "NewError must return error")
 	assertNotEqual(t, err, innerErr, "NewError must return error different to inputted error")
 
@@ -38,7 +38,7 @@ func TestError_Unwrap(t *testing.T) {
 func TestError_Unwrap_IsError(t *testing.T) {
 	// This tests that builtin errors.Is(...) works as expected on coded errors.
 	innerErr := errors.New("inner_error")
-	err := occamy.NewError(innerErr, occamy.ErrKindUnknownHandlerError)
+	err := occamy.NewError(occamy.ErrKindUnknownHandlerError, innerErr)
 
 	assertTrue(t, errors.Is(err, err), "errors.Is(...) when ")
 	assertTrue(t, errors.Is(err, innerErr), "err must ")
@@ -52,7 +52,7 @@ func TestExtractErrorKind(t *testing.T) {
 		emptyKind occamy.ErrKind = ""
 	)
 
-	err := occamy.NewError(fmt.Errorf("error"), innerKind)
+	err := occamy.NewError(innerKind, fmt.Errorf("error"))
 	status, ok := occamy.ExtractErrorKind(err)
 	assertTrue(t, ok, "extraction after NewError failed")
 	assertEqual(t, innerKind, status, "wrong kind returned after NewError")
@@ -62,7 +62,7 @@ func TestExtractErrorKind(t *testing.T) {
 	assertTrue(t, ok, "extraction after wrapping failed")
 	assertEqual(t, innerKind, status, "wrong kind returned after wrapping")
 
-	err = occamy.NewError(err, outerKind)
+	err = occamy.NewError(outerKind, err)
 	status, ok = occamy.ExtractErrorKind(err)
 	assertTrue(t, ok, "extraction after NewError on occamy error failed")
 	assertEqual(t, outerKind, status, "wroong extraction after NewError on occamy error")

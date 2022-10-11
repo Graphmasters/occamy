@@ -315,8 +315,8 @@ func TestServer_HandleRequestMsg_multipleMessage(t *testing.T) {
 	assertErrorIsNil(t, monitors.Error.nextError(), "errors after stopping tasks")
 	assertResourceMonitorStatusMatch(t, monitors.Resource, DefaultResources-4, 4, 0, 0, "resources after stopping tasks")
 
-	controller.stop(msgs[2].id, occamy.NewError(fmt.Errorf("stopping msg 2"), occamy.ErrKindInvalidTask))
-	controller.stop(msgs[3].id, occamy.NewError(fmt.Errorf("stopping msg 3"), occamy.ErrKindInvalidTask))
+	controller.stop(msgs[2].id, occamy.NewErrorf(occamy.ErrKindInvalidTask, "stopping msg 2"))
+	controller.stop(msgs[3].id, occamy.NewErrorf(occamy.ErrKindInvalidTask, "stopping msg 3"))
 	time.Sleep(ShortDuration)
 	assertErrorMonitorErrorCount(t, monitors.Error, 2, "check errors after tasks throwing errors")
 	assertErrorIsOccamyError(t, occamy.ErrKindInvalidTask, monitors.Error.nextError(), "checking error after tasks throwing error (1)")
@@ -631,7 +631,7 @@ func NewStandardHandler(controller *TaskController) *StandardHandler {
 func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Task, error) {
 	data := &MessageDataRequest{}
 	if err := json.Unmarshal(body, data); err != nil {
-		return nil, occamy.NewError(fmt.Errorf("failed to unmarshal as json: %w", err), occamy.ErrKindInvalidBody)
+		return nil, occamy.NewErrorf(occamy.ErrKindInvalidBody, "failed to unmarshal as json: %w", err)
 	}
 
 	switch data.TaskGroup {
@@ -640,7 +640,7 @@ func (sh *StandardHandler) Handle(header occamy.Headers, body []byte) (occamy.Ta
 	case TaskGroupUnstoppable:
 		return NewUnstoppableTask(data.ID, data.Expandable), nil
 	default:
-		return nil, occamy.NewError(fmt.Errorf("unknown task group: %s", data.TaskGroup), occamy.ErrKindInvalidBody)
+		return nil, occamy.NewErrorf(occamy.ErrKindInvalidBody, "unknown task group: %s", data.TaskGroup)
 	}
 }
 
@@ -935,7 +935,7 @@ func (task *SimpleTask) Do(ctx context.Context) error {
 	case <-task.controller.stopCh(task.id):
 		return task.controller.error(task.id)
 	case <-ctx.Done():
-		return occamy.NewError(ctx.Err(), occamy.ErrKindTaskInterrupted)
+		return occamy.NewError(occamy.ErrKindTaskInterrupted, ctx.Err())
 	}
 }
 
