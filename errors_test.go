@@ -24,6 +24,15 @@ func TestNewError_nil(t *testing.T) {
 	assertNoError(t, err, "NewError should return nil error when passed nil error")
 }
 
+func TestNewErrorf(t *testing.T) {
+	const kind = occamy.ErrKindInvalidHeader
+	err := occamy.NewErrorf(kind, "error")
+	assertError(t, err, "NewError must return error")
+
+	_, ok := err.(*occamy.Error)
+	assertTrue(t, ok, "NewError should return an error that can be type converted to *occamy.Error")
+}
+
 func TestError_Unwrap(t *testing.T) {
 	innerErr := errors.New("error")
 	err := occamy.NewError(occamy.ErrKindUnknownTaskError, innerErr)
