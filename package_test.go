@@ -1,7 +1,6 @@
 package occamy_test
 
 import (
-	"os"
 	"reflect"
 	"testing"
 )
@@ -58,10 +57,4 @@ func assertFalse(t *testing.T, value bool, msg string) bool {
 
 	t.Errorf("%s: value was expected to be false", msg)
 	return false
-}
-
-func enforce(result bool) {
-	if !result {
-		os.Exit(1)
-	}
 }
