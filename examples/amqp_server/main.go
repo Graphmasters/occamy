@@ -284,7 +284,7 @@ func declareExchanges(connection *amqp.Connection, exchanges ...string) {
 func handle(_ occamy.Headers, body []byte) (occamy.Task, error) {
 	// Implement your own task and handle logic!
 	log.Printf("unable to handle message with body: %s\n", string(body))
-	return nil, occamy.ErrInternalHandlerError
+	return nil, fmt.Errorf("handle function not implemented")
 }
 
 // endregion
